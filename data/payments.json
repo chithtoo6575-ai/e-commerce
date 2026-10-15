@@ -1,0 +1,35 @@
+{
+  "kbzpay": {
+    "id": "kbzpay",
+    "name": "KBZ Pay",
+    "nameMyanmar": "KBZ Pay",
+    "enabled": true,
+    "accountName": "chit chit htoo",
+    "phoneNumber": "09760586555"
+  },
+  "wavemoney": {
+    "id": "wavemoney",
+    "name": "Wave Money",
+    "nameMyanmar": "Wave Money",
+    "enabled": false,
+    "accountName": "",
+    "phoneNumber": ""
+  },
+  "ayapay": {
+    "id": "ayapay",
+    "name": "AYA Pay",
+    "nameMymyanmar": "AYA Pay",
+    "enabled": false,
+    "accountName": "",
+    "phoneNumber": ""
+  },
+  "bank": {
+    "id": "bank",
+    "name": "Bank Transfer",
+    "nameMyanmar": "ဘဏ်လွှဲပြီ",
+    "enabled": false,
+    "accountName": "",
+    "bankName": "",
+    "accountNumber": ""
+  }
+}
