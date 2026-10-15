@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 data/admin.json
+data/shop.sqlite
+data/shop.sqlite-shm
+data/shop.sqlite-wal
 
 # Editor directories and files
 .vscode/*

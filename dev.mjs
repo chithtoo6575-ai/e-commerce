@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.dirname(fileURLToPath(import.meta.url))
 const viteArgs = process.argv.slice(2)
 const children = [
-  spawn(process.execPath, [path.join(root, 'server.js')], { cwd: root, stdio: 'inherit', env: process.env }),
+  spawn(process.execPath, ['--watch', path.join(root, 'server.js')], { cwd: root, stdio: 'inherit', env: process.env }),
   spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), ...viteArgs], { cwd: root, stdio: 'inherit', env: process.env }),
 ]
 let stopping = false

@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-The owner area uses a separate server-side session. Copy `.env.example` to `.env` and set a real `ADMIN_EMAIL` and a strong `ADMIN_PASSWORD` of at least 12 characters. The local `.env` is loaded by the API and setup script and is never bundled into the frontend.
+The owner area and buyer authentication use server-side API sessions. The API requires Node.js 22.13 or newer (for the built-in SQLite driver). Copy `.env.example` to `.env`, set a real `ADMIN_EMAIL` and a strong `ADMIN_PASSWORD` of at least 12 characters, and configure Twilio Verify for buyer phone OTP as described below. The local `.env` is loaded by the API and setup script and is never bundled into the frontend.
 
 ```bash
 npm run admin:setup
@@ -18,6 +18,41 @@ npm run dev:api
 
 `npm run admin:setup` creates or replaces the owner account by hashing the password with Node `scrypt` and storing only the salted hash in `data/admin.json`. Run it once for a new local account, or again whenever you intentionally change the credentials, then restart the API. Open `/admin/login` for owner access. The API rejects every `/api/admin/*` request without an authenticated HttpOnly session. Admin credentials are never bundled into the frontend.
 
+## Telegram Bot, Mini App, and customer sign-in
+
+The bot reuses the existing Node API and SQLite order/customer store. Set these values in the API server's local `.env`; never put the bot token, webhook secret, OIDC client secret, or other private credentials in frontend code:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=<token from BotFather>
+TELEGRAM_ADMIN_CHAT_ID=<admin private chat or group ID>
+TELEGRAM_ADMIN_USER_ID=<admin Telegram user ID>
+TELEGRAM_WEBHOOK_SECRET=<random 1-256 character value using letters, digits, _ or ->
+TELEGRAM_WEBHOOK_URL=https://<public-host>/api/telegram/webhook
+TELEGRAM_MINI_APP_URL=https://<public-host>/
+```
+
+Both URLs must be public HTTPS addresses reachable by Telegram. Do not use `localhost`, a private IP address, or an HTTP URL in production. For local development, run `npm run dev`, expose its Vite port (5173) through an HTTPS tunnel, and set both URLs to that tunnel host; Vite proxies `/api` requests to the local Node API on port 8787. A tunnel URL is temporary and must remain active for webhook delivery.
+
+After saving real bot credentials and URLs, run:
+
+```bash
+npm run telegram:setup
+```
+
+The setup command validates the required values, registers the webhook with Telegram's secret-token header, publishes `/start`, `/help`, `/orders`, and `/pending`, and sets the Mini App menu button. It makes live Bot API calls, so do not run it with placeholder values. Telegram must be able to reach the configured webhook URL; setup cannot verify that your host stays online.
+
+The Mini App authenticates Telegram `initData` server-side and checks its signature and age. A customer links Telegram to their existing account from inside the signed-in Mini App; `/orders` only lists that linked account's orders in a private chat. Admin callbacks and `/pending` require both the configured admin chat ID and user ID. Admin order links require the normal Admin session, and customer order links only open orders returned for the signed-in customer. Checkout request retries use a persisted idempotency key so a repeated request returns the saved order instead of creating another order or Telegram notification. Missing Telegram bot configuration does not prevent storefront, checkout, or Admin order changes.
+
+Website buyers use Telegram's official OpenID Connect authorization-code flow (not the Login Widget response as trusted frontend data). In BotFather's Telegram Login settings, register the local and production callback URLs as allowed URLs and copy the Login Client ID and Client Secret to the API server:
+
+```dotenv
+TELEGRAM_CLIENT_ID=<Telegram Login client ID>
+TELEGRAM_CLIENT_SECRET=<Telegram Login client secret>
+TELEGRAM_REDIRECT_URI=http://localhost:5173/auth/telegram/callback
+```
+
+For production, set the redirect URI to `https://<your-domain>/auth/telegram/callback` and register that exact URI in BotFather. The web sign-in uses only the `openid profile` scopes; phone and bot-access permissions are not requested. The API keeps state, nonce, and the PKCE verifier server-side, exchanges the authorization code on the backend, verifies the ID-token signature using Telegram's JWKS, and checks issuer, audience, expiry, issue time, and nonce. Telegram website sign-in has its own client credentials; the bot token above remains server-only for the existing Mini App and bot features. See the [official Telegram Login documentation](https://core.telegram.org/bots/telegram-login).
+
 Production checks:
 
 ```bash
@@ -25,34 +60,98 @@ npm run lint
 npm run build
 ```
 
+## Buyer accounts, authentication, and orders
+
+Buyer passwords are hashed with Node `scrypt`. The API stores customer profiles, products, stock, promotions, and orders in `data/shop.sqlite` using Node's built-in SQLite driver. On first startup, the API imports the existing `data/shop.json` document into SQLite in a transaction and leaves the original file unchanged. It will not silently replace malformed legacy data with an empty store. After migration, SQLite is authoritative; do not edit the old JSON file to update live shop records. Order creation and stock decrements are saved in one atomic SQLite document update with a revision check, and all existing order/admin API routes continue to use that backend store.
+
+Products can optionally track `variantStock` by exact size/color combination. Existing products remain on aggregate stock until an owner explicitly enables variant tracking and enters every combination's on-hand quantity in the product editor; saving derives aggregate stock from those counts. No table rebuild or destructive data migration is required because this is an additive field in the existing SQLite shop-state payload. Cart validation, order creation, cancellation returns, and admin stock movements all use the same variant counts.
+
+Buyer sign-up and sign-in use a Myanmar phone number and Twilio Verify SMS code. The API verifies the code with Twilio before creating or signing in to the matching customer account; it never sends or stores the OTP itself. Authentication uses an HttpOnly, SameSite cookie; browser local storage is not used for buyer credentials or session tokens. Existing email/password and external identity data remains in the customer store for compatibility, and verified recovery-email features remain available to eligible existing accounts. Google and Telegram sign-in buttons are no longer shown on the buyer authentication page; the existing server-side OIDC/account-linking APIs remain available to linked-account flows. Provider identifiers (`sub`) link identities; matching email addresses alone never merge accounts.
+
+For local development, `AUTH_OTP_MODE=auto` uses Twilio when all three Twilio credentials are present. If none are present, it enables a development-only mock OTP (`123456`) without sending SMS; the code is displayed on the verification screen. The mock is never enabled when `NODE_ENV=production`, and partial Twilio configuration does not silently fall back to mock mode. To explicitly select a provider, use `AUTH_OTP_MODE=mock` (local development only) or `AUTH_OTP_MODE=twilio`. Set `NODE_ENV=production` on production deployments.
+
+Set these API-server environment variables in `.env`:
+
+```dotenv
+AUTH_SECRET=<at-least-32-random-characters>
+AUTH_OTP_MODE=auto
+TWILIO_ACCOUNT_SID=<Twilio-account-SID>
+TWILIO_AUTH_TOKEN=<Twilio-auth-token>
+TWILIO_VERIFY_SERVICE_SID=<Twilio-Verify-service-SID>
+EMAIL_HOST=<your-transactional-email-SMTP-host>
+EMAIL_PORT=587
+EMAIL_USER=<SMTP-user>
+EMAIL_PASSWORD=<SMTP-password-or-provider-app-password>
+EMAIL_FROM=HTOO Online <no-reply@your-domain.example>
+```
+
+Create a Verify service in Twilio Console and set its Account SID, Auth Token, and Verify Service SID only in the API server environment. Twilio Verify owns code generation, SMS delivery, expiry, and code checking; the application applies additional per-phone and per-IP request limits. For local testing without SMS, leave the Twilio credentials blank and keep `AUTH_OTP_MODE=auto`, or explicitly set `AUTH_OTP_MODE=mock`; use the displayed `123456` test code. Never use mock mode in production. Keep the same persistent `AUTH_SECRET` across API restarts and keep all provider credentials in the server environment/secret manager. SMTP remains optional for the legacy recovery-email features; configure it with a transactional email service or a properly authorized SMTP account if those features are needed.
+
+### Google Cloud OAuth setup
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), select or create a project and configure the OAuth consent screen. Add the app name and support email; while the consent screen is in testing, add each test buyer as a test user.
+2. Create an OAuth client with application type **Web application**.
+3. Add `http://localhost:5173` under **Authorized JavaScript origins** for local development. Add `https://<your-production-domain>` for production.
+4. Add the exact value of `GOOGLE_REDIRECT_URI` under **Authorized redirect URIs**: `http://localhost:5173/` locally and `https://<your-production-domain>/` in production. Google requires an exact match, including path and trailing slash.
+5. Put the client ID and secret in the API server's `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Never put the client secret in a `VITE_*` variable or frontend source. Set `GOOGLE_REDIRECT_URI` to the matching local or production URL before starting the API.
+
+After configuration, run `npm run dev`, open the storefront, and test sign-up with a phone number you can access, SMS delivery and code verification, sign-in with that phone number, guest checkout, and logout. The local Vite server proxies `/api` to the Node API. For production, serve the built frontend and Node API behind HTTPS on the same origin (or configure a same-origin reverse proxy for `/api`), set `NODE_ENV=production`, `API_PORT`, a stable `AUTH_SECRET`, and Twilio credentials in the host's secret manager. Cookies are marked Secure in production. Run one API process against a persistent SQLite volume; login sessions and in-flight OAuth state are process-local and are intentionally invalidated on restart.
+
+### Backup and restore
+
+Keep backups encrypted and access-controlled because the database contains customer contact/delivery details and payment-evidence references.
+
+1. Stop the API so SQLite can checkpoint its write-ahead log.
+2. Copy `data/shop.sqlite`, `data/payments.json`, `data/settings.json`, `data/admin.json`, `public/uploads/`, and the legacy `data/shop.json` to the protected backup location. Back up `.env` separately in a secrets manager; never commit it.
+3. To restore, stop the API, restore those files to their original paths (including the SQLite file and uploads), check file permissions, and start the API. Do not restore `shop.json` over an existing SQLite database; the JSON file is only used for first-time import. Verify product stock and the Orders page after restart.
+
+For PowerShell, with the API stopped, use an explicit destination and preserve the directory tree, for example:
+
+```powershell
+$backup = "D:\HTOO-backups\2026-10-13"
+New-Item -ItemType Directory -Force $backup
+Copy-Item data\shop.sqlite, data\payments.json, data\settings.json, data\admin.json, data\shop.json $backup
+Copy-Item public\uploads $backup\uploads -Recurse
+```
+
+Do not run backup/restore commands against production paths until the destination and source have been checked.
+
 ## What is included
 
 - Responsive storefront layout for desktop and mobile
 - Store-type filters, search, saved products, and cart quantity controls
 - Cart totals and checkout entry point
 - Mobile bottom navigation
-- Sign up and sign in flows with customer or seller roles
+- Buyer phone-number registration and sign-in with Twilio Verify SMS OTP and server-side sessions
+- Existing verified recovery-email and linked-account records for customer account compatibility
+- Existing guest shopping and checkout flows
 - Guest cart persistence with localStorage
 - User-specific cart persistence and guest-to-user cart merge on sign in
+- Signed-in customer carts are synchronized with the shared backend as well as the local cache
 - Protected owner dashboard at `/admin` with login at `/admin/login`
 - Owner dashboard order summary and order-status controls at `/admin/dashboard`
-- New customer orders are forwarded to the server-owned order store for the owner dashboard
-- Admin product CRUD with bilingual names/descriptions, multi-image uploads, stock controls, search, filters, sorting, and enable/disable state
+- Owner-only shipping management with persisted shipment status and tracking numbers at `/admin`
+- Inventory availability and reservations reflect unfulfilled orders; eligible cancellations restore stock
+- Dashboard order, fulfillment, revenue, and average-order-value KPIs with daily comparisons
+- New customer orders and stock changes are persisted in SQLite and shown in the existing Owner/Admin Orders section
+- Admin product CRUD with bilingual names/descriptions, multi-image uploads, aggregate or per-size/color stock controls, search, filters, sorting, and enable/disable state
 - Customer catalog refreshes from the shared product API on focus and periodically while open
 
-Demo catalog data and the customer-only local persistence adapter currently live in `src/App.jsx` and `src/lib/storage.js`. The admin foundation uses `server.js`; replace its JSON store with PostgreSQL or another durable database before production.
+The sample catalog in `src/App.jsx` is only a frontend fallback while the API catalog loads. The browser persistence adapter in `src/lib/storage.js` is used for non-authoritative shopping conveniences such as guest carts; customer records, product stock, payment evidence, and orders are stored by the API in SQLite.
 
 ## Try the flows
 
-1. Click the profile circle and create a shopper account or seller account.
+1. Click the profile circle and create a shopper account with a phone number and SMS code, or continue as a guest. Buyer phone authentication requires configured Twilio Verify delivery.
 2. Add an item as a guest, then sign up or sign in to see the guest cart merge into the account cart.
 3. Refresh the browser to verify that the cart and session remain available.
-4. Create a seller account, open the account menu, choose `Open seller dashboard`, and update inventory.
-5. Refresh again to verify inventory changes remain available locally.
+4. Place an order and verify it appears in the customer order history and Admin Orders page.
+5. Restart the API, then verify the order and stock change remain in SQLite.
 
-The local data keys are `atelier_users`, `atelier_session`, `atelier_carts`, `atelier_guest_cart`, and `atelier_products`.
+Guest cart data uses `atelier_guest_cart`; buyer authentication and profiles are handled by the Node API.
 
-## Scale-to-mobile architecture
+## Future scale-up roadmap
+
+The following are longer-term options, not prerequisites for the current buyer flow.
 
 ### 1. Split by feature
 
@@ -71,9 +170,9 @@ src/
 
 Move to TypeScript when the API contract is introduced. Keep catalog and cart as domain features so their business rules can be reused by React Native later.
 
-### 2. Add the backend boundary
+### 2. Scale the backend boundary
 
-Recommended foundation: Node.js with NestJS or Fastify, PostgreSQL, Redis, and S3-compatible object storage.
+For higher traffic or multiple API instances, consider a normalized managed database, shared session/rate-limit storage, and S3-compatible private object storage. The current Node API and SQLite database are already the source of truth for this single-process deployment.
 
 Core domains are `users`, `stores`, `products`, `product_variants`, `inventory`, `carts`, `orders`, `payments`, `wishlists`, `delivery_zones`, and `promotions`. Expose versioned endpoints such as `/api/v1/catalog`, `/api/v1/cart`, and `/api/v1/orders`. Validate at the boundary and calculate prices on the server.
 

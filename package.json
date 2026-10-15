@@ -3,15 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "node dev.mjs",
     "dev:api": "node server.js",
     "admin:setup": "node setup-admin.mjs",
+    "telegram:setup": "node scripts/setup-telegram.mjs",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "nodemailer": "^10.0.15",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

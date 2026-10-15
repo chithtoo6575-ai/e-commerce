@@ -23,9 +23,10 @@ export function saveCart(userId, items) { write(KEYS.carts, { ...read(KEYS.carts
 export function mergeCart(userId, guestItems) {
   const merged = [...getCart(userId)]
   guestItems.forEach((guestItem) => {
-    const existing = merged.find((item) => item.id === guestItem.id)
+    const guestKey = guestItem.cartKey || `${guestItem.id}:${guestItem.variants?.size || ''}:${guestItem.variants?.color || ''}`
+    const existing = merged.find((item) => (item.cartKey || `${item.id}:${item.variants?.size || ''}:${item.variants?.color || ''}`) === guestKey)
     if (existing) existing.quantity += guestItem.quantity
-    else merged.push(guestItem)
+    else merged.push({ ...guestItem, cartKey: guestKey })
   })
   saveCart(userId, merged)
   return merged
