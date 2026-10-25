@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import BuyerAuth from './BuyerAuth'
 import { AddToCartButton } from './CartControls'
+import SupportChannelList from './SupportChannelList'
 import { getProductStock, getProductVariants } from './lib/productVariants'
 import { t } from './lib/i18n'
 
@@ -91,6 +92,10 @@ export default function DesktopApp({
   formatPrice,
   ONBOARDING_KEY,
   storefrontBanners = [],
+  supportChannels = [],
+  supportChannelsLoading = false,
+  supportChannelsError = '',
+  loadSupportChannels,
   language = 'en',
   setLanguage = () => {}
 }) {
@@ -102,6 +107,8 @@ export default function DesktopApp({
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   }, [storefrontBanners])
   const [activeBannerIndex, setActiveBannerIndex] = useState(0)
+  // Screen-reader announcement after a support channel is opened.
+  const [supportNotice, setSupportNotice] = useState('')
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia?.('(min-width: 768px)')?.matches ?? true)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false)
 
@@ -297,7 +304,7 @@ export default function DesktopApp({
             <option value="my">🇲🇲 မြန်မာ</option>
             <option value="en">🇺🇸 English</option>
           </select>
-          <button onClick={beginCheckout}>{tr('Checkout')}</button>
+          <button onClick={() => beginCheckout('review')}>{tr('Checkout')}</button>
           {user || guestMode
             ? <button onClick={logout}>{tr('Log Out')}</button>
             : <button onClick={() => setRoute({ page: 'auth' })}>{tr('Sign In / Register')}</button>
@@ -513,8 +520,19 @@ export default function DesktopApp({
             <p>{tr('Cash on Delivery')}</p>
           </article>
 
-          <article className="card-block">
-            <h3>{tr('Settings / Help & Support / About Us')}</h3>
+          <article className="card-block desktop-support-card">
+            <h3>{tr('Help & Support')}</h3>
+            <p className="desktop-support-intro">{tr('Reach our team on any channel below — we are happy to help with orders, payments and delivery.')}</p>
+            <SupportChannelList
+              channels={supportChannels}
+              loading={supportChannelsLoading}
+              error={supportChannelsError}
+              onRetry={loadSupportChannels}
+              tr={tr}
+              onNotify={setSupportNotice}
+              compact
+            />
+            <p className="sr-only" role="status" aria-live="polite">{supportNotice}</p>
             <p>{tr('Track Order, Return / Refund, and support are available after order placement.')}</p>
           </article>
 
@@ -592,7 +610,7 @@ export default function DesktopApp({
             <p>{tr('Delivery')}: {formatPrice(deliveryFee)}</p>
             {couponDiscount > 0 && <p>{tr('Discount')}: −{formatPrice(couponDiscount)}</p>}
             <strong>{tr('Total')}: {formatPrice(cartTotal)}</strong>
-            <button className="btn-primary" disabled={!cart.some((item) => item.selected !== false)} onClick={beginCheckout}>{tr('Proceed to Checkout')}</button>
+            <button className="btn-primary" disabled={!cart.some((item) => item.selected !== false)} onClick={() => beginCheckout('review')}>{tr('Proceed to Checkout')}</button>
           </article>
         </section>
       )}

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { t } from './lib/i18n'
 
 export default function BuyerAuth({
@@ -13,7 +14,6 @@ export default function BuyerAuth({
   onOtpSubmit,
   onResetPassword,
   onResendOtp,
-  continueAsGuest,
   busy,
   language,
   authPhone,
@@ -23,32 +23,42 @@ export default function BuyerAuth({
   const verifying = authFlow === 'otp'
   const resettingPassword = authFlow === 'reset-password'
   const forgotPassword = authFlow === 'forgot'
+  const credentialsScreen = !verifying && !resettingPassword && !forgotPassword
+  const [showSignupPassword, setShowSignupPassword] = useState(false)
+  const [showSigninPassword, setShowSigninPassword] = useState(false)
+  const [showSignupPasswordConfirmation, setShowSignupPasswordConfirmation] = useState(false)
+
+  const passwordToggle = (visible, setVisible) => (
+    <button
+      className="buyer-auth-password-toggle"
+      type="button"
+      onClick={() => setVisible(!visible)}
+      aria-label={tr(visible ? 'Hide password' : 'Show password')}
+      aria-pressed={visible}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        {visible ? (
+          <>
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+            <circle cx="12" cy="12" r="3" />
+          </>
+        ) : (
+          <>
+            <path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+            <path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a16 16 0 0 1-3.2 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.7 10.7 0 0 0 4-.8" />
+          </>
+        )}
+      </svg>
+    </button>
+  )
 
   return (
     <main className="buyer-auth-screen">
       <section className="buyer-auth-card" aria-labelledby="buyer-auth-title">
-        <header className="buyer-auth-banner">
-          <img src="/auth-banner.svg" alt="" aria-hidden="true" />
-          <div className="buyer-auth-banner-copy">
-            <span>HTOO ONLINE</span>
-            <strong>{tr('A little joy in every order')}</strong>
-          </div>
-        </header>
-
         <div className="buyer-auth-heading">
-          <p className="buyer-auth-eyebrow">{verifying ? tr('PHONE VERIFICATION') : tr('WELCOME TO HTOO')}</p>
-          <h1 id="buyer-auth-title">{verifying ? tr('Verify your phone') : resettingPassword ? tr('Create a new password') : forgotPassword ? tr('Forgot password?') : authMode === 'signup' ? tr('Create your account') : tr('Welcome back')}</h1>
-          <p className="buyer-auth-subtitle">
-            {verifying
-              ? <>{tr('Enter the 6-digit code sent to')} <strong>{authPhone}</strong></>
-              : resettingPassword
-                ? tr('Enter a new password for your account.')
-                : forgotPassword
-                  ? tr('We’ll text you a code to reset your password.')
-              : authMode === 'signup'
-                ? tr('Create an account with your phone number.')
-                : tr('Log in with your phone number and password.')}
-          </p>
+          {!credentialsScreen && <p className="buyer-auth-eyebrow">{verifying ? tr('PHONE VERIFICATION') : resettingPassword ? tr('PASSWORD RESET') : tr('ACCOUNT RECOVERY')}</p>}
+          <h1 id="buyer-auth-title">{verifying ? tr('Verify your phone') : resettingPassword ? tr('Create a new password') : forgotPassword ? tr('Forgot password?') : authMode === 'signup' ? tr('Create account') : tr('Log in')}</h1>
+          {verifying && <p className="buyer-auth-subtitle">{tr('Enter the 6-digit code sent to')} <strong>{authPhone}</strong></p>}
         </div>
 
         {verifying ? (
@@ -90,29 +100,56 @@ export default function BuyerAuth({
               <label className="buyer-auth-label" htmlFor="buyer-name">{tr('Name')}</label>
               <input id="buyer-name" className="buyer-auth-input" name="name" autoComplete="name" placeholder={tr('Enter your name')} maxLength={120} required />
             </>}
-            <label className="buyer-auth-label" htmlFor="buyer-phone">{tr('Phone number')}</label>
+            <label className="buyer-auth-label" htmlFor="buyer-phone">{forgotPassword ? tr('Phone number') : authMode === 'signup' ? tr('Phone number') : tr('Phone number or Email')}</label>
             <input
               id="buyer-phone"
               className="buyer-auth-input"
-              name="phone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              value={authPhone}
-              onChange={(event) => setAuthPhone(event.target.value)}
-              placeholder="09xxxxxxxxx"
-              maxLength={18}
-              aria-describedby={authMode === 'signup' && !forgotPassword ? 'buyer-phone-hint' : undefined}
+              name={authMode === 'signin' && !forgotPassword ? 'identifier' : 'phone'}
+              type={authMode === 'signin' && !forgotPassword ? 'text' : 'tel'}
+              inputMode={authMode === 'signin' && !forgotPassword ? 'text' : 'tel'}
+              autoComplete={authMode === 'signin' && !forgotPassword ? 'username' : 'tel'}
+              {...(authMode === 'signin' && !forgotPassword ? {
+                placeholder: tr('09xxxxxxxxx or you@email.com'),
+                maxLength: 254
+              } : {
+                value: authPhone,
+                onChange: (event) => setAuthPhone(event.target.value),
+                placeholder: '09xxxxxxxxx',
+                maxLength: 18
+              })}
               required
             />
+            {!forgotPassword && authMode === 'signup' && <>
+              <label className="buyer-auth-label" htmlFor="buyer-email">{tr('Gmail')}</label>
+              <input
+                id="buyer-email"
+                className="buyer-auth-input"
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder={tr('Enter your Gmail address')}
+                maxLength={254}
+                required
+              />
+            </>}
             {!forgotPassword && <>
               <label className="buyer-auth-label" htmlFor="buyer-password">{tr('Password')}</label>
-              <input id="buyer-password" className="buyer-auth-input" name="password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={8} maxLength={256} placeholder={tr('Enter your password')} required />
-              {authMode === 'signup' && <p id="buyer-phone-hint" className="buyer-auth-hint">{tr('We’ll text you a one-time verification code.')}</p>}
+              <div className="buyer-auth-password-field">
+                <input id="buyer-password" className="buyer-auth-input" name="password" type={(authMode === 'signup' ? showSignupPassword : showSigninPassword) ? 'text' : 'password'} autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={8} maxLength={256} placeholder={tr('Enter your password')} required />
+                {authMode === 'signup' ? passwordToggle(showSignupPassword, setShowSignupPassword) : passwordToggle(showSigninPassword, setShowSigninPassword)}
+              </div>
+              {authMode === 'signup' && <>
+                <label className="buyer-auth-label" htmlFor="buyer-confirm-password">{tr('Confirm password')}</label>
+                <div className="buyer-auth-password-field">
+                  <input id="buyer-confirm-password" className="buyer-auth-input" name="confirmPassword" type={showSignupPasswordConfirmation ? 'text' : 'password'} autoComplete="new-password" minLength={8} maxLength={256} placeholder={tr('Confirm your password')} required />
+                  {passwordToggle(showSignupPasswordConfirmation, setShowSignupPasswordConfirmation)}
+                </div>
+              </>}
             </>}
             {error && <p className="buyer-auth-error" role="alert">{tr(error)}</p>}
             {notice && <p className="buyer-auth-notice" role="status">{tr(notice)}</p>}
-            <button className="buyer-auth-primary" type="submit" disabled={busy}>{busy ? tr('Please wait…') : forgotPassword ? tr('Send OTP code') : authMode === 'signup' ? tr('Send OTP code') : tr('Log in')}</button>
+            <button className="buyer-auth-primary" type="submit" disabled={busy}>{busy ? tr('Please wait…') : forgotPassword ? tr('Send OTP code') : authMode === 'signup' ? tr('Create account') : tr('Log in')}</button>
           </form>
         )}
 
@@ -127,9 +164,8 @@ export default function BuyerAuth({
               if (!forgotPassword) setAuthMode(authMode === 'signin' ? 'signup' : 'signin')
             }}
           >
-            {forgotPassword ? tr('Back to login') : authMode === 'signin' ? tr('New to Htoo? Create an account') : tr('Already have an account? Sign in')}
+            {forgotPassword ? tr('Back to login') : authMode === 'signin' ? tr('Create an account') : tr('Log in')}
           </button>
-          {!forgotPassword && <button className="buyer-auth-guest" type="button" onClick={continueAsGuest}>{tr('Continue as Guest')}</button>}
         </div>}
       </section>
     </main>

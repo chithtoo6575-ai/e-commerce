@@ -238,8 +238,8 @@ function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus }) {
   const isVIP = customer.totalSpent >= 200000
 
   return (
-    <div className="admin-drawer-overlay" onClick={onClose}>
-      <div className="admin-drawer" onClick={(e) => e.stopPropagation()}>
+    <div className="admin-drawer-overlay customer-drawer-overlay" onClick={onClose}>
+      <div className="admin-drawer customer-detail-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
             <h3>{adminT("Customer Profile")}</h3>

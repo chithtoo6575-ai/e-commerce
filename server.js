@@ -1,4 +1,4 @@
-import http from 'node:http'
+﻿import http from 'node:http'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -43,9 +43,9 @@ const SHIPPING_STATUSES = ['Preparing', 'Shipped', 'In Transit', 'Delivered', 'F
 const STOCK_MOVEMENT_TYPES = ['Stock In', 'Stock Out', 'Adjustment', 'Return', 'Damaged']
 const STOREFRONT_CATEGORIES = ['Men', 'Women', 'Kids', 'Shoes', 'Accessories', 'Sale']
 const DEFAULT_CATEGORIES = [
-  { id: 'Clothing', name: 'Clothing', storefrontCategory: 'Men', icon: '◇', image: '', enabled: true },
-  { id: 'Grocery', name: 'Grocery', storefrontCategory: 'Accessories', icon: '▦', image: '', enabled: true },
-  { id: 'Phones & Accessories', name: 'Phones & Accessories', storefrontCategory: 'Accessories', icon: '▣', image: '', enabled: true }
+  { id: 'Clothing', name: 'Clothing', storefrontCategory: 'Men', icon: 'â—‡', image: '', enabled: true },
+  { id: 'Grocery', name: 'Grocery', storefrontCategory: 'Accessories', icon: 'â–¦', image: '', enabled: true },
+  { id: 'Phones & Accessories', name: 'Phones & Accessories', storefrontCategory: 'Accessories', icon: 'â–£', image: '', enabled: true }
 ]
 const DEFAULT_BANNERS = [
   {
@@ -66,7 +66,7 @@ const oauthTransactions = new Map()
 const dataRevisions = new WeakMap()
 
 function normalizeShopData(data) {
-  const base = { orders: [], products: [], customers: [], promotions: [], categories: DEFAULT_CATEGORIES, banners: DEFAULT_BANNERS, orderChats: [], stockMovements: [], guestOrderAccess: {}, activityLog: [], processedTelegramUpdates: [], telegramOrderMessages: {}, telegramOrderNotifications: {}, orderIdempotency: [], authChallenges: {}, authRateLimits: {} }
+  const base = { orders: [], products: [], customers: [], promotions: [], categories: DEFAULT_CATEGORIES, banners: DEFAULT_BANNERS, orderChats: [], stockMovements: [], guestOrderAccess: {}, activityLog: [], processedTelegramUpdates: [], telegramOrderMessages: {}, telegramOrderNotifications: {}, orderIdempotency: [], authChallenges: {}, authRateLimits: {}, supportChannels: [] }
   const safeData = { ...base, ...data }
   for (const key of ['orders', 'products', 'customers', 'promotions']) {
     if (!Array.isArray(safeData[key])) throw new Error(`Shop data field "${key}" must be an array.`)
@@ -83,6 +83,7 @@ function normalizeShopData(data) {
   safeData.orderIdempotency = Array.isArray(safeData.orderIdempotency) ? safeData.orderIdempotency.slice(-1000) : []
   safeData.authChallenges = safeData.authChallenges && typeof safeData.authChallenges === 'object' && !Array.isArray(safeData.authChallenges) ? safeData.authChallenges : {}
   safeData.authRateLimits = safeData.authRateLimits && typeof safeData.authRateLimits === 'object' && !Array.isArray(safeData.authRateLimits) ? safeData.authRateLimits : {}
+  safeData.supportChannels = Array.isArray(safeData.supportChannels) ? safeData.supportChannels : []
   return safeData
 }
 function initializeShopDatabase() {
@@ -175,8 +176,10 @@ function writeAdminAccount() {
 }
 const adminAccount = loadAdminAccount()
 function send(response, status, body, headers = {}) {
+  // Guarantee every API response is JSON, even if a handler passed a string or nothing.
+  const payload = body && typeof body === 'object' ? body : { ok: status < 400 }
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers })
-  response.end(JSON.stringify(body))
+  response.end(JSON.stringify(payload))
 }
 function cookieValue(request, name) {
   return (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.split('=')[1]
@@ -184,7 +187,9 @@ function cookieValue(request, name) {
 function adminSession(request) {
   const token = cookieValue(request, 'hto_admin_session')
   const session = token && sessions.get(token)
-  return session?.type === 'admin' ? session : null
+  if (session?.type !== 'admin') return null
+  if (session.expiresAt <= Date.now()) { sessions.delete(token); return null }
+  return session
 }
 function customerSession(request) {
   const token = cookieValue(request, customerCookie)
@@ -552,7 +557,14 @@ function readBody(request) {
   return new Promise((resolve, reject) => {
     let body = ''
     request.on('data', (chunk) => { body += chunk; if (body.length > 8_000_000) request.destroy() })
-    request.on('end', () => { try { resolve(body ? JSON.parse(body) : {}) } catch { reject(new Error('Invalid JSON')) } })
+    request.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}) } catch {
+        // A malformed body must still surface as a structured JSON error, never a crash.
+        const parseError = new Error('Request body must be valid JSON.')
+        parseError.status = 400
+        reject(parseError)
+      }
+    })
     request.on('error', reject)
   })
 }
@@ -713,6 +725,33 @@ function cleanCategory(input, existing = {}) {
   if (category.image && (typeof category.image !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(category.image) || category.image.length > 7_000_000)) throw new Error('Category image must be a JPG, PNG, or WebP image no larger than 5 MB.')
   return category
 }
+const SUPPORT_CHANNEL_NAMES = ['Facebook', 'Telegram', 'Viber', 'Phone', 'Email', 'Instagram', 'WhatsApp', 'TikTok']
+const SUPPORT_CHANNEL_PROTOCOLS = ['http:', 'https:', 'viber:', 'tg:', 'tel:', 'mailto:']
+function cleanSupportChannel(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  const channel = String(input.channel || input.name || '').trim()
+  if (!SUPPORT_CHANNEL_NAMES.includes(channel)) return null
+  const link = String(input.link || input.contact || '').trim()
+  if (link && !SUPPORT_CHANNEL_PROTOCOLS.includes(safeProtocol(link))) return null
+  return {
+    id: String(input.id || `sup-${crypto.randomUUID().slice(0, 8)}`),
+    channel,
+    accountName: String(input.accountName || '').trim().slice(0, 120),
+    username: String(input.username || '').trim().slice(0, 120),
+    link: link.slice(0, 500),
+    icon: String(input.icon || '').trim().slice(0, 8),
+    description: String(input.description || '').trim().slice(0, 240),
+    status: input.status === 'Inactive' ? 'Inactive' : 'Active',
+    sortOrder: Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : 1
+  }
+}
+function safeProtocol(value) {
+  try {
+    return new URL(value, 'https://localhost').protocol
+  } catch {
+    return ''
+  }
+}
 function cleanBanner(input, existing = {}) {
   const banner = { ...existing, ...input }
   banner.id = existing.id || banner.id || `ban-${crypto.randomUUID().slice(0, 8)}`
@@ -857,17 +896,17 @@ function telegramOrderKeyboard(order) {
 }
 function telegramOrderMessage(order) {
   const headings = {
-    New: '🛍️ NEW ORDER',
-    Confirmed: '🟢 ORDER CONFIRMED',
-    Packing: '📦 ORDER PACKING',
-    Shipped: '🚚 ORDER SHIPPED',
-    Delivered: '✅ ORDER DELIVERED',
-    Cancelled: '❌ ORDER CANCELLED'
+    New: 'ðŸ›ï¸ NEW ORDER',
+    Confirmed: 'ðŸŸ¢ ORDER CONFIRMED',
+    Packing: 'ðŸ“¦ ORDER PACKING',
+    Shipped: 'ðŸšš ORDER SHIPPED',
+    Delivered: 'âœ… ORDER DELIVERED',
+    Cancelled: 'âŒ ORDER CANCELLED'
   }
   const paymentStatus = order.paymentStatus === 'Verified' ? 'Paid' : order.paymentStatus === 'Not Required' ? 'Not Required' : order.paymentStatus === 'Rejected' ? 'Rejected' : 'Pending'
-  const items = (order.items || []).map((item) => `• ${item.name} × ${item.quantity}`).join('\n') || '• No items'
+  const items = (order.items || []).map((item) => `â€¢ ${item.name} Ã— ${item.quantity}`).join('\n') || 'â€¢ No items'
   const cancellationReason = order.status === 'Cancelled' ? `\nReason: ${order.cancellationReason || 'Cancelled by shop'}` : ''
-  return `${headings[order.status] || 'ORDER UPDATE'}\n\nOrder: #${order.orderNumber || order.id}\n\n👤 Customer:\n${order.customer?.name || 'Customer'}\n\n📞 Phone:\n${order.customer?.phone || '—'}\n\n📦 Items:\n${items}\n\n💰 Subtotal: ${Math.round(order.subtotal || 0).toLocaleString('en-US')} MMK\n🚚 Delivery: ${Math.round(order.deliveryFee || 0).toLocaleString('en-US')} MMK\n🏷️ Discount: ${Math.round(order.discount || 0).toLocaleString('en-US')} MMK\n\n💵 TOTAL: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\n\n💳 Payment: ${order.paymentMethod || '—'}\n💰 Payment Status: ${paymentStatus}\n\n📦 Order Status: ${order.status}${order.trackingNumber ? `\nTracking: ${order.trackingNumber}` : ''}${cancellationReason}`
+  return `${headings[order.status] || 'ORDER UPDATE'}\n\nOrder: #${order.orderNumber || order.id}\n\nðŸ‘¤ Customer:\n${order.customer?.name || 'Customer'}\n\nðŸ“ž Phone:\n${order.customer?.phone || 'â€”'}\n\nðŸ“¦ Items:\n${items}\n\nðŸ’° Subtotal: ${Math.round(order.subtotal || 0).toLocaleString('en-US')} MMK\nðŸšš Delivery: ${Math.round(order.deliveryFee || 0).toLocaleString('en-US')} MMK\nðŸ·ï¸ Discount: ${Math.round(order.discount || 0).toLocaleString('en-US')} MMK\n\nðŸ’µ TOTAL: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\n\nðŸ’³ Payment: ${order.paymentMethod || 'â€”'}\nðŸ’° Payment Status: ${paymentStatus}\n\nðŸ“¦ Order Status: ${order.status}${order.trackingNumber ? `\nTracking: ${order.trackingNumber}` : ''}${cancellationReason}`
 }
 async function telegramRequest(method, payload) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
@@ -970,25 +1009,25 @@ function notifyTelegramCustomer(order, text) {
 }
 function notifyTelegramOrderStatus(order) {
   const statusText = order.status === 'Shipped'
-    ? `🚚 ORDER SHIPPED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nTracking: ${order.trackingNumber || 'Not provided'}`
+    ? `ðŸšš ORDER SHIPPED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nTracking: ${order.trackingNumber || 'Not provided'}`
     : order.status === 'Delivered'
-      ? `✅ ORDER DELIVERED\n\nOrder: #${order.orderNumber}`
+      ? `âœ… ORDER DELIVERED\n\nOrder: #${order.orderNumber}`
       : order.status === 'Confirmed'
-        ? `🟢 ORDER CONFIRMED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nTotal: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK`
+        ? `ðŸŸ¢ ORDER CONFIRMED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nTotal: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK`
         : order.status === 'Packing'
-          ? `📦 ORDER PACKING\n\nOrder: #${order.orderNumber}`
+          ? `ðŸ“¦ ORDER PACKING\n\nOrder: #${order.orderNumber}`
           : order.status === 'Cancelled'
-            ? `❌ ORDER CANCELLED\n\nOrder: #${order.orderNumber}\nReason: ${order.cancellationReason || 'Cancelled by shop'}`
+            ? `âŒ ORDER CANCELLED\n\nOrder: #${order.orderNumber}\nReason: ${order.cancellationReason || 'Cancelled by shop'}`
             : `Order #${order.orderNumber} status changed to ${order.status}.`
   updateTelegramOrderMessage(order, statusText)
   notifyTelegramCustomer(order, statusText)
 }
 function notifyTelegramPayment(order) {
-  const message = `💳 PAYMENT RECEIVED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nAmount: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\nPayment Method: ${order.paymentMethod || '—'}\nStatus: Paid`
+  const message = `ðŸ’³ PAYMENT RECEIVED\n\nOrder: #${order.orderNumber}\nCustomer: ${order.customer?.name || 'Customer'}\nAmount: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\nPayment Method: ${order.paymentMethod || 'â€”'}\nStatus: Paid`
   const viewUrl = getAdminOrderUrl(order.id)
   const keyboard = { inline_keyboard: [[viewUrl ? { text: 'View Order', url: viewUrl } : { text: 'View Order', callback_data: `view_order:${order.id}` }]] }
   notifyTelegramAdmin(message, `Payment notification for ${order.orderNumber}`, keyboard)
-  notifyTelegramCustomer(order, `💳 Payment received for your HTOO Online Shop order #${order.orderNumber}.`)
+  notifyTelegramCustomer(order, `ðŸ’³ Payment received for your HTOO Online Shop order #${order.orderNumber}.`)
 }
 function orderTransitionError(currentStatus, nextStatus) {
   if (!ORDER_STATUSES.includes(nextStatus)) return 'Invalid order status.'
@@ -1092,7 +1131,7 @@ function queueTelegramStart(chatId) {
 function queueTelegramOrderList(chatId, orders, heading, customerView = false) {
   const recent = orders.slice(0, 10)
   const text = recent.length
-    ? `${heading}\n\n${recent.map((order) => `#${order.orderNumber || order.id} · ${order.status} · ${Math.round(order.total || 0).toLocaleString('en-US')} MMK`).join('\n')}`
+    ? `${heading}\n\n${recent.map((order) => `#${order.orderNumber || order.id} Â· ${order.status} Â· ${Math.round(order.total || 0).toLocaleString('en-US')} MMK`).join('\n')}`
     : `${heading}\n\nNo orders found.`
   const rows = customerView
     ? recent.flatMap((order) => {
@@ -1113,8 +1152,8 @@ function handleTelegramMessage(message, data) {
   if (command === '/start') return queueTelegramStart(chatId)
   if (command === '/help') {
     const help = isAdmin
-      ? 'HTOO Shop commands:\n/start — Open the Mini App\n/help — Show this help\n/orders — Recent orders\n/pending — Orders awaiting fulfillment'
-      : 'HTOO Shop commands:\n/start — Open the Mini App\n/help — Show this help\n/orders — View your orders'
+      ? 'HTOO Shop commands:\n/start â€” Open the Mini App\n/help â€” Show this help\n/orders â€” Recent orders\n/pending â€” Orders awaiting fulfillment'
+      : 'HTOO Shop commands:\n/start â€” Open the Mini App\n/help â€” Show this help\n/orders â€” View your orders'
     return queueTelegramRequest('sendMessage', { chat_id: chatId, text: help }, 'Help command response')
   }
   if (command === '/orders') {
@@ -1275,10 +1314,13 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/admin/login') {
       const body = await readBody(request)
       if (!adminAccount) return send(response, 503, { error: 'Admin setup is required on the server.' })
-      if (body.email?.trim().toLowerCase() !== adminAccount.email || !passwordMatches(body.password)) return send(response, 401, { error: 'Admin email or password is incorrect.' })
+      const email = String(body?.email || '').trim().toLowerCase()
+      if (!email || typeof body?.password !== 'string') return send(response, 400, { error: 'Enter your admin email and password.' })
+      if (email !== adminAccount.email || !passwordMatches(body.password)) return send(response, 401, { error: 'Admin email or password is incorrect.' })
       const token = crypto.randomBytes(32).toString('hex')
-      sessions.set(token, { type: 'admin', email: adminAccount.email, createdAt: Date.now() })
-      return send(response, 200, { admin: { email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' } }, { 'Set-Cookie': `hto_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}` })
+      const maxAge = 8 * 60 * 60
+      sessions.set(token, { type: 'admin', email: adminAccount.email, createdAt: Date.now(), expiresAt: Date.now() + maxAge * 1000 })
+      return send(response, 200, { admin: { email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' } }, { 'Set-Cookie': `hto_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie}` })
     }
     if (request.method === 'POST' && url.pathname === '/api/admin/logout') {
       const token = cookieValue(request, 'hto_admin_session'); if (token) sessions.delete(token)
@@ -1336,6 +1378,9 @@ const server = http.createServer(async (request, response) => {
       if (request.method === 'PUT') {
         const body = await readBody(request)
         if (!Array.isArray(body.items) || body.items.length > 100) return send(response, 400, { error: 'Cart must contain no more than 100 items.' })
+        // An exclusive replace is only used to sync from the checkout screen, which
+        // sends the whole cart; read-modify-write syncs must not wipe newer items.
+        const exclusive = request.headers['x-cart-sync-mode'] === 'replace'
         const normalized = []
         const requestedByProduct = new Map()
         const requestedByVariant = new Map()
@@ -1359,29 +1404,91 @@ const server = http.createServer(async (request, response) => {
             const variantRequested = (byVariant.get(key) || 0) + quantity
             byVariant.set(key, variantRequested)
             requestedByVariant.set(productId, byVariant)
-            if (variantRequested > Number(product.variantStock[key] || 0)) return send(response, 400, { error: `Cart quantity exceeds available stock for ${product.nameEn || product.name} (${[variants.size, variants.color].filter(Boolean).join(' · ')}).` })
+            if (variantRequested > Number(product.variantStock[key] || 0)) return send(response, 400, { error: `Cart quantity exceeds available stock for ${product.nameEn || product.name} (${[variants.size, variants.color].filter(Boolean).join(' Â· ')}).` })
           }
           const existing = normalized.find((entry) => entry.productId === productId && entry.variants.size === variants.size && entry.variants.color === variants.color)
           if (existing) existing.quantity = Math.min(999, existing.quantity + quantity)
           else normalized.push({ productId, quantity, variants, selected: item.selected !== false })
         }
-        customer.cart = normalized
+        customer.cart = exclusive
+          ? normalized
+          : normalized.map((entry) => ({
+              ...entry,
+              // Keep items added or selected after this sync started unless the client says otherwise.
+              selected: (Array.isArray(customer.cart) ? customer.cart : []).find((item) =>
+                String(item.productId) === entry.productId && productVariantStockKey(item.variants || {}) === productVariantStockKey(entry.variants)
+              )?.selected ?? entry.selected
+            }))
         data.customers = data.customers.map((item) => item.id === customer.id ? customer : item)
         writeData(data)
         return send(response, 200, { ok: true })
       }
       return send(response, 405, { error: 'Method not allowed.' })
     }
+    if (request.method === 'POST' && url.pathname === '/api/customer/phone/signup') {
+      const body = await readBody(request)
+      const phone = phoneE164(body.phone)
+      const name = String(body.name || '').trim()
+      const email = normalizeEmail(body.email)
+      if (!validPhone(body.phone) || !phone || !name || name.length > 120 || !validEmail(email) || email.length > 254 ||
+        !validPassword(body.password) || body.password !== body.confirmPassword) {
+        return send(response, 400, { error: 'Enter a valid name, phone number and email address, and matching passwords of at least 8 characters.' })
+      }
+      const data = readData()
+      pruneAuthState(data)
+      const phoneHash = crypto.createHash('sha256').update(phone).digest('hex')
+      const ip = request.socket.remoteAddress || 'unknown'
+      const retryAfter = Math.max(
+        authRateLimit(data, `phone-signup:${phoneHash}`, 5, 60 * 60 * 1000),
+        authRateLimit(data, `phone-signup-ip:${ip}`, 20, 60 * 60 * 1000)
+      )
+      if (retryAfter) {
+        writeData(data)
+        return send(response, 429, { error: 'Too many signup attempts. Please try again later.' }, { 'Retry-After': String(retryAfter) })
+      }
+      const existingCustomer = data.customers.find((item) =>
+        item.phone && phoneE164(item.phone) === phone
+      )
+      if (existingCustomer) {
+        writeData(data)
+        return send(response, 409, { error: 'An account already exists for this phone number. Please log in instead.' })
+      }
+      const existingEmail = data.customers.find((item) =>
+        item.email && normalizeEmail(item.email) === email
+      )
+      if (existingEmail) {
+        writeData(data)
+        return send(response, 409, { error: 'An account already exists for this email address. Please log in instead.' })
+      }
+      const now = new Date().toISOString()
+      const salt = crypto.randomBytes(16).toString('hex')
+      const customer = {
+        id: crypto.randomUUID(),
+        name,
+        email,
+        phone,
+        phoneVerified: false,
+        emailVerified: false,
+        salt,
+        passwordHash: hashPassword(body.password, salt),
+        authProvider: 'password',
+        createdAt: now,
+        lastLoginAt: now,
+        orderIds: []
+      }
+      data.customers = [customer, ...data.customers]
+      writeData(data)
+      const maxAge = 2592000
+      return send(response, 201, { customer: customerSafeProfile(customer) }, {
+        'Set-Cookie': customerCookieHeader(createCustomerSession(customer, maxAge), maxAge)
+      })
+    }
     if (request.method === 'POST' && url.pathname === '/api/customer/phone/request') {
       const body = await readBody(request)
       const phone = phoneE164(body.phone)
-      const mode = body.mode === 'signup' ? 'signup' : body.mode === 'reset-password' ? 'reset-password' : ''
-      const name = String(body.name || '').trim()
-      if (!mode) return send(response, 400, { error: 'Invalid phone verification request.' })
-      if (!validPhone(body.phone) || !phone ||
-        (mode === 'signup' && (!name || name.length > 120 || !validPassword(body.password)))) {
-        return send(response, 400, { error: mode === 'signup' ? 'Enter a valid name, phone number, and password of at least 8 characters.' : 'Enter a valid Myanmar phone number.' })
-      }
+      if (body.mode !== 'reset-password') return send(response, 400, { error: 'Invalid phone verification request.' })
+      if (!validPhone(body.phone) || !phone) return send(response, 400, { error: 'Enter a valid Myanmar phone number.' })
+      const mode = 'reset-password'
       const provider = phoneOtpProvider()
       if (!provider) {
         const message = process.env.NODE_ENV === 'production'
@@ -1392,12 +1499,10 @@ const server = http.createServer(async (request, response) => {
       const data = readData()
       pruneAuthState(data)
       const matchingCustomer = data.customers.find((item) =>
-        item.phone && phoneE164(item.phone) === phone && item.phoneVerified
+        item.phone && phoneE164(item.phone) === phone &&
+        (item.phoneVerified || item.authProvider === 'phone-password')
       )
-      if (mode === 'signup' && matchingCustomer) {
-        return send(response, 409, { error: 'An account already exists for this phone number. Please log in instead.' })
-      }
-      if (mode === 'reset-password' && !matchingCustomer) {
+      if (!matchingCustomer) {
         return send(response, 404, { error: 'No account was found for this phone number.' })
       }
       const phoneHash = crypto.createHash('sha256').update(phone).digest('hex')
@@ -1427,16 +1532,10 @@ const server = http.createServer(async (request, response) => {
         if (challenge.purpose === 'phone' && challenge.phone === phone) delete latestData.authChallenges[id]
       }
       const challengeId = crypto.randomUUID()
-      const passwordSalt = mode === 'signup' ? crypto.randomBytes(16).toString('hex') : ''
       latestData.authChallenges[challengeId] = {
         purpose: 'phone',
         phone,
         mode,
-        name,
-        ...(mode === 'signup' ? {
-          passwordSalt,
-          passwordHash: hashPassword(body.password, passwordSalt)
-        } : {}),
         provider,
         ...(provider === 'mock' ? { otpHash: otpHash(phone, DEVELOPMENT_PHONE_OTP, 'phone', challengeId) } : {}),
         attempts: 0,
@@ -1505,6 +1604,11 @@ const server = http.createServer(async (request, response) => {
         writeData(data)
         return send(response, 400, { error: 'This verification code expired. Request a new one.' })
       }
+      if (challenge.mode !== 'reset-password') {
+        delete data.authChallenges[challengeId]
+        writeData(data)
+        return send(response, 400, { error: 'Phone verification is only available for password recovery.' })
+      }
       if (challenge.provider === 'mock' && process.env.NODE_ENV === 'production') {
         delete data.authChallenges[challengeId]
         writeData(data)
@@ -1543,46 +1647,26 @@ const server = http.createServer(async (request, response) => {
       }
       const normalizedPhone = phoneE164(latestChallenge.phone)
       let customer = latestData.customers.find((item) =>
-        item.phoneVerified && item.phone && phoneE164(item.phone) === normalizedPhone
+        item.phone && phoneE164(item.phone) === normalizedPhone &&
+        (item.phoneVerified || item.authProvider === 'phone-password')
       )
       const unverifiedPhoneAccount = latestData.customers.some((item) =>
         !item.phoneVerified && item.phone && phoneE164(item.phone) === normalizedPhone
       )
-      if (customer && latestChallenge.mode === 'signup') {
-        delete latestData.authChallenges[challengeId]
-        writeData(latestData)
-        return send(response, 409, { error: 'An account already exists for this phone number. Please log in instead.' })
-      }
       if (!customer && unverifiedPhoneAccount) {
         delete latestData.authChallenges[challengeId]
         writeData(latestData)
         return send(response, 409, { error: 'This phone number is already linked to an account that has not verified it. Contact support to link it safely.' })
       }
-      if (!customer && latestChallenge.mode !== 'signup') {
+      if (!customer) {
         delete latestData.authChallenges[challengeId]
         writeData(latestData)
         return send(response, 404, { error: 'No account was found for this phone number. Create an account to continue.' })
       }
-      if (!customer) {
-        customer = {
-          id: crypto.randomUUID(),
-          name: latestChallenge.name,
-          email: '',
-          phone: normalizedPhone,
-          phoneVerified: true,
-          phoneVerifiedAt: new Date().toISOString(),
-          salt: latestChallenge.passwordSalt,
-          passwordHash: latestChallenge.passwordHash,
-          authProvider: 'phone',
-          createdAt: new Date().toISOString(),
-          orderIds: []
-        }
-      } else {
-        customer.phone = normalizedPhone
-        customer.phoneVerified = true
-        customer.phoneVerifiedAt = customer.phoneVerifiedAt || new Date().toISOString()
-        customer.lastLoginAt = new Date().toISOString()
-      }
+      customer.phone = normalizedPhone
+      customer.phoneVerified = true
+      customer.phoneVerifiedAt = customer.phoneVerifiedAt || new Date().toISOString()
+      customer.lastLoginAt = new Date().toISOString()
       latestData.customers = [customer, ...latestData.customers.filter((item) => item.id !== customer.id)]
       for (const [id, item] of Object.entries(latestData.authChallenges)) {
         if (item.purpose === 'phone' && item.phone === normalizedPhone) delete latestData.authChallenges[id]
@@ -1592,14 +1676,22 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'POST' && url.pathname === '/api/customer/phone/login') {
       const body = await readBody(request)
-      const phone = phoneE164(body.phone)
-      if (!validPhone(body.phone) || !phone) return send(response, 400, { error: 'Enter a valid Myanmar phone number.' })
+      const identifier = String(body.identifier || body.phone || body.email || '').trim()
+      const phone = phoneE164(identifier)
+      const email = normalizeEmail(identifier)
+      const isEmailIdentifier = email.includes('@')
+      const isPhoneIdentifier = !isEmailIdentifier && Boolean(phone) && validPhone(identifier)
+      if (!isEmailIdentifier && !isPhoneIdentifier) {
+        return send(response, 400, { error: 'Enter a valid phone number or email address.' })
+      }
       const data = readData()
       pruneAuthState(data)
-      const phoneHash = crypto.createHash('sha256').update(phone).digest('hex')
+      const identifierHash = crypto.createHash('sha256')
+        .update(isEmailIdentifier ? email : phone)
+        .digest('hex')
       const ip = request.socket.remoteAddress || 'unknown'
       const retryAfter = Math.max(
-        authRateLimit(data, `phone-login:${ip}:${phoneHash}`, 10, 15 * 60 * 1000),
+        authRateLimit(data, `phone-login:${ip}:${identifierHash}`, 10, 15 * 60 * 1000),
         authRateLimit(data, `phone-login-ip:${ip}`, 30, 15 * 60 * 1000)
       )
       if (retryAfter) {
@@ -1607,14 +1699,17 @@ const server = http.createServer(async (request, response) => {
         return send(response, 429, { error: 'Too many login attempts. Please try again later.' }, { 'Retry-After': String(retryAfter) })
       }
       writeData(data)
-      const customer = data.customers.find((item) =>
-        item.phoneVerified && item.phone && phoneE164(item.phone) === phone
-      )
+      const customer = isEmailIdentifier
+        ? data.customers.find((item) => item.email && normalizeEmail(item.email) === email && item.passwordHash)
+        : data.customers.find((item) =>
+            item.phone && phoneE164(item.phone) === phone &&
+            (item.phoneVerified || item.authProvider === 'phone-password')
+          )
       const password = typeof body.password === 'string' && body.password.length <= 256 ? body.password : ''
       const actual = customer?.salt && customer?.passwordHash ? Buffer.from(hashPassword(password, customer.salt), 'hex') : Buffer.alloc(0)
       const expected = customer?.passwordHash ? Buffer.from(customer.passwordHash, 'hex') : Buffer.alloc(0)
       if (!customer || !expected.length || actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
-        return send(response, 401, { error: 'Phone number or password is incorrect.' })
+        return send(response, 401, { error: 'Phone number, email address or password is incorrect.' })
       }
       customer.lastLoginAt = new Date().toISOString()
       data.customers = data.customers.map((item) => item.id === customer.id ? customer : item)
@@ -1629,7 +1724,7 @@ const server = http.createServer(async (request, response) => {
       if (!validPassword(body.password)) return send(response, 400, { error: 'Password must be at least 8 characters.' })
       const data = readData()
       const customer = data.customers.find((item) => item.id === session.customerId)
-      if (!customer || !customer.phoneVerified) return send(response, 404, { error: 'Phone-verified customer account was not found.' })
+      if (!customer) return send(response, 404, { error: 'Customer account was not found.' })
       const salt = crypto.randomBytes(16).toString('hex')
       customer.salt = salt
       customer.passwordHash = hashPassword(body.password, salt)
@@ -1639,14 +1734,14 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'POST' && url.pathname === '/api/customer/register') {
       const body = await readBody(request); const name = String(body.name || '').trim(); const email = normalizeEmail(body.email); const phone = normalizePhone(body.phone)
-      if (!name || name.length > 120 || !validEmail(email) || !validPhone(phone) || !validPassword(body.password) || body.password !== body.confirmPassword) return send(response, 400, { error: 'အမည်၊ အီးမေးလ်၊ ဖုန်းနံပါတ်နှင့် အနည်းဆုံး ၈ လုံးရှိသော စကားဝှက်ကို မှန်ကန်စွာ ဖြည့်ပါ။' })
+      if (!name || name.length > 120 || !validEmail(email) || !validPhone(phone) || !validPassword(body.password) || body.password !== body.confirmPassword) return send(response, 400, { error: 'á€¡á€™á€Šá€ºáŠ á€¡á€®á€¸á€™á€±á€¸á€œá€ºáŠ á€–á€¯á€”á€ºá€¸á€”á€¶á€•á€«á€á€ºá€”á€¾á€„á€·á€º á€¡á€”á€Šá€ºá€¸á€†á€¯á€¶á€¸ áˆ á€œá€¯á€¶á€¸á€›á€¾á€­á€žá€±á€¬ á€…á€€á€¬á€¸á€á€¾á€€á€ºá€€á€­á€¯ á€™á€¾á€”á€ºá€€á€”á€ºá€…á€½á€¬ á€–á€¼á€Šá€·á€ºá€•á€«á‹' })
       const data = readData(); pruneAuthState(data)
       const ipRetryAfter = authRateLimit(data, `register-ip:${request.socket.remoteAddress || 'unknown'}`, 10, 60 * 60 * 1000)
       if (ipRetryAfter) { writeData(data); return send(response, 429, { error: 'Too many registration attempts. Please try again later.' }, { 'Retry-After': String(ipRetryAfter) }) }
       const existingEmail = data.customers.find((item) => normalizeEmail(item.email) === email)
-      if (existingEmail?.passwordHash) return send(response, 409, { error: 'ဤအီးမေးလ်ဖြင့် အကောင့်ရှိပြီးသား ဖြစ်ပါသည်။' })
+      if (existingEmail?.passwordHash) return send(response, 409, { error: 'á€¤á€¡á€®á€¸á€™á€±á€¸á€œá€ºá€–á€¼á€„á€·á€º á€¡á€€á€±á€¬á€„á€·á€ºá€›á€¾á€­á€•á€¼á€®á€¸á€žá€¬á€¸ á€–á€¼á€…á€ºá€•á€«á€žá€Šá€ºá‹' })
       const existingPhone = data.customers.find((item) => item.phone && normalizePhone(item.phone) === phone)
-      if (existingPhone?.email && normalizeEmail(existingPhone.email) !== email) return send(response, 409, { error: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ရှိပြီးသား ဖြစ်ပါသည်။' })
+      if (existingPhone?.email && normalizeEmail(existingPhone.email) !== email) return send(response, 409, { error: 'á€¤á€–á€¯á€”á€ºá€¸á€”á€¶á€•á€«á€á€ºá€–á€¼á€„á€·á€º á€¡á€€á€±á€¬á€„á€·á€ºá€›á€¾á€­á€•á€¼á€®á€¸á€žá€¬á€¸ á€–á€¼á€…á€ºá€•á€«á€žá€Šá€ºá‹' })
       if (!emailTransport()) return send(response, 503, { error: 'Email verification service is not configured. Please contact support.' })
       const salt = crypto.randomBytes(16).toString('hex')
       const existing = existingEmail || existingPhone
@@ -1693,14 +1788,14 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { customer: customerSafeProfile(customer) }, { 'Set-Cookie': customerCookieHeader(createCustomerSession(customer, 2592000), 2592000) })
     }
     if (request.method === 'POST' && url.pathname === '/api/customer/login') {
-      const body = await readBody(request); const email = normalizeEmail(body.email); const data = readData(); pruneAuthState(data)
+      const body = await readBody(request); const email = normalizeEmail(body?.email); const data = readData(); pruneAuthState(data)
       const ip = request.socket.remoteAddress || 'unknown'
       const retryAfter = Math.max(authRateLimit(data, `login:${ip}:${email}`, 10, 15 * 60 * 1000), authRateLimit(data, `login-ip:${ip}`, 30, 15 * 60 * 1000))
       if (retryAfter) { writeData(data); return send(response, 429, { error: 'Too many login attempts. Please try again later.' }, { 'Retry-After': String(retryAfter) }) }
       writeData(data)
       const customer = data.customers.find((item) => normalizeEmail(item.email) === email)
-      const actual = customer?.salt && customer?.passwordHash ? Buffer.from(hashPassword(body.password || '', customer.salt), 'hex') : Buffer.alloc(0); const expected = customer?.passwordHash ? Buffer.from(customer.passwordHash, 'hex') : Buffer.alloc(0)
-      if (!customer || !expected.length || actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return send(response, 401, { error: 'အီးမေးလ် သို့မဟုတ် စကားဝှက် မမှန်ကန်ပါ။' })
+      const actual = customer?.salt && customer?.passwordHash ? Buffer.from(hashPassword(String(body?.password || ''), customer.salt), 'hex') : Buffer.alloc(0); const expected = customer?.passwordHash ? Buffer.from(customer.passwordHash, 'hex') : Buffer.alloc(0)
+      if (!customer || !expected.length || actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return send(response, 401, { error: 'á€¡á€®á€¸á€™á€±á€¸á€œá€º á€žá€­á€¯á€·á€™á€Ÿá€¯á€á€º á€…á€€á€¬á€¸á€á€¾á€€á€º á€™á€™á€¾á€”á€ºá€€á€”á€ºá€•á€«á‹' })
       if (!customer.emailVerified) return send(response, 403, { error: 'Please verify your email before signing in.' })
       customer.lastLoginAt = new Date().toISOString()
       data.customers = data.customers.map((item) => item.id === customer.id ? customer : item)
@@ -2023,11 +2118,67 @@ const server = http.createServer(async (request, response) => {
       chat.updatedAt = new Date().toISOString(); writeData(data)
       return send(response, 200, { ok: true, chat: getOrderChatPayload(chat, order) })
     }
+    if (url.pathname === '/api/admin/support-channels') {
+      if (!adminOnly(request, response)) return
+      if (request.method === 'GET') {
+        return send(response, 200, { channels: readData().supportChannels })
+      }
+      if (request.method === 'PUT') {
+        const body = await readBody(request)
+        if (!Array.isArray(body.channels)) return send(response, 400, { error: 'Support channels must be an array.' })
+        const channels = body.channels.map((channel) => cleanSupportChannel(channel))
+        if (channels.some((channel) => !channel)) return send(response, 400, { error: 'Support channels contain an invalid entry.' })
+        const data = readData()
+        data.supportChannels = channels.map((channel, index) => ({ ...channel, sortOrder: index + 1 }))
+        auditAdminAction(data, request, 'Updated customer support channels.')
+        writeData(data)
+        return send(response, 200, { channels: data.supportChannels })
+      }
+      return send(response, 405, { error: 'Method not allowed.' })
+    }
     if (url.pathname.startsWith('/api/admin/payments')) {
       if (!adminOnly(request, response)) return
       if (request.method === 'GET') {
         const payments = readPayments()
         return send(response, 200, { payments })
+      }
+      if (request.method === 'PUT' && url.pathname === '/api/admin/payments') {
+        const body = await readBody(request)
+        const payments = readPayments()
+        const configuredIds = Object.keys(payments)
+        if (!Array.isArray(body.methods) || body.methods.length !== configuredIds.length) {
+          return send(response, 400, { error: 'Payment methods must include every configured account.' })
+        }
+        if (body.methods.some((method) => !method || typeof method !== 'object' || Array.isArray(method))) {
+          return send(response, 400, { error: 'Payment methods contain an invalid account.' })
+        }
+        const methodIds = body.methods.map((method) => method?.id)
+        if (new Set(methodIds).size !== methodIds.length || methodIds.some((id) => typeof id !== 'string' || !Object.hasOwn(payments, id))) {
+          return send(response, 400, { error: 'Payment methods contain an unknown or duplicate account.' })
+        }
+        const sortedMethods = [...body.methods].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder))
+        if (sortedMethods.some((method, index) =>
+          (method.status !== 'Active' && method.status !== 'Inactive') ||
+          !Number.isInteger(method.sortOrder) ||
+          method.sortOrder !== index + 1
+        )) {
+          return send(response, 400, { error: 'Payment methods must have a valid status and order.' })
+        }
+        const updatedPayments = Object.fromEntries(sortedMethods.map((method) => [
+          method.id,
+          { ...payments[method.id], enabled: method.status === 'Active', sortOrder: method.sortOrder }
+        ]))
+        const changedMethods = sortedMethods.filter((method) =>
+          payments[method.id].enabled !== (method.status === 'Active') ||
+          payments[method.id].sortOrder !== method.sortOrder
+        )
+        writePayments(updatedPayments)
+        if (changedMethods.length) {
+          const data = readData()
+          auditAdminAction(data, request, 'Updated payment method availability or order.')
+          writeData(data)
+        }
+        return send(response, 200, { payments: updatedPayments })
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/payments') {
         const body = await readBody(request)
@@ -2327,6 +2478,7 @@ const server = http.createServer(async (request, response) => {
         if (body.status && !ORDER_STATUSES.includes(body.status)) return send(response, 400, { error: 'Invalid order status.' })
         if (body.paymentStatus && !PAYMENT_STATUSES.includes(body.paymentStatus)) return send(response, 400, { error: 'Invalid payment status.' })
         if (body.shippingStatus && !SHIPPING_STATUSES.includes(body.shippingStatus)) return send(response, 400, { error: 'Invalid shipping status.' })
+        if (Object.hasOwn(body, 'deliveryFee') && (typeof body.deliveryFee !== 'number' || !Number.isFinite(body.deliveryFee) || body.deliveryFee < 0 || body.deliveryFee > Number.MAX_SAFE_INTEGER)) return send(response, 400, { error: 'Delivery fee must be a valid non-negative amount.' })
         if (Object.hasOwn(body, 'trackingNumber') && (typeof body.trackingNumber !== 'string' || body.trackingNumber.length > 100)) return send(response, 400, { error: 'Tracking number must be a string of 100 characters or fewer.' })
         if (Object.hasOwn(body, 'deliveryCompany') && (typeof body.deliveryCompany !== 'string' || body.deliveryCompany.length > 120)) return send(response, 400, { error: 'Delivery company must be a string of 120 characters or fewer.' })
         const existing = data.orders.find((order) => order.id === id)
@@ -2340,6 +2492,11 @@ const server = http.createServer(async (request, response) => {
         const transitioned = requestedStatus && requestedStatus !== existing.status ? transitionOrder(data, existing, requestedStatus, updatedAt) : existing
         const updated = {
           ...transitioned,
+          ...(Object.hasOwn(body, 'deliveryFee') ? {
+            deliveryFee: body.deliveryFee,
+            shippingFee: body.deliveryFee,
+            total: Number(existing.subtotal ?? (existing.items || []).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0)) + body.deliveryFee - Number(existing.discount || 0)
+          } : {}),
           ...(body.paymentStatus ? {
             paymentStatus: body.paymentStatus,
             paymentVerificationStatus: body.paymentStatus,
@@ -2385,10 +2542,33 @@ const server = http.createServer(async (request, response) => {
       const promotions = data.promotions.filter((promotion) => promotion.enabled && (!promotion.startsAt || promotion.startsAt <= today) && (!promotion.endsAt || promotion.endsAt >= today)).map((promotion) => ({ code: promotion.code || promotion.name, name: promotion.name, type: promotion.type, amount: promotion.amount, minimumOrder: Number(promotion.minimumOrder || 0), usageLimit: Number(promotion.usageLimit || 0), usageCount: data.orders.filter((order) => String(order.couponCode || '').toUpperCase() === String(promotion.code || promotion.name).toUpperCase()).length }))
       return send(response, 200, { promotions })
     }
+    if (request.method === 'GET' && url.pathname === '/api/support-channels') {
+      // Public, read-only: only active channels are exposed to the storefront.
+      const channels = readData().supportChannels
+        .filter((channel) => channel.status === 'Active')
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        .map((channel) => ({
+          id: channel.id,
+          channel: channel.channel,
+          accountName: channel.accountName,
+          username: channel.username,
+          link: channel.link,
+          description: channel.description,
+          icon: channel.icon,
+          sortOrder: channel.sortOrder,
+        }))
+      return send(response, 200, { channels })
+    }
     if (request.method === 'GET' && url.pathname === '/api/settings') return send(response, 200, { settings: readSettings() })
     if (request.method === 'GET' && url.pathname === '/api/payments') {
       const payments = readPayments()
-      const enabled = Object.values(payments).filter((payment) => payment.enabled && (payment.id === 'cod' || (payment.accountName && (payment.type === 'bank' || payment.id === 'bank' ? payment.bankName && payment.accountNumber : payment.phoneNumber)))).map((payment) => ({ id: payment.id, name: payment.name, nameMyanmar: payment.nameMyanmar, type: payment.type || (payment.id === 'bank' ? 'bank' : payment.id === 'cod' ? 'cash' : 'wallet'), accountName: payment.accountName || '', phoneNumber: payment.phoneNumber || '', bankName: payment.bankName || '', accountNumber: payment.accountNumber || '', qrCode: payment.qrCode || '' }))
+      const enabled = Object.values(payments)
+        .filter((payment) => payment.enabled && (payment.id === 'cod' || (payment.accountName && (payment.type === 'bank' || payment.id === 'bank' ? payment.bankName && payment.accountNumber : payment.phoneNumber))))
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        .map((payment) => {
+          const type = payment.type || (payment.id === 'bank' ? 'bank' : payment.id === 'cod' ? 'cash' : 'wallet')
+          return { id: payment.id, name: payment.name, nameMyanmar: payment.nameMyanmar, type, kind: type === 'bank' ? 'bank' : type === 'cash' ? 'cod' : 'wallet', accountName: payment.accountName || '', phoneNumber: payment.phoneNumber || '', bankName: payment.bankName || '', accountNumber: payment.accountNumber || '', qrCode: payment.qrCode || '' }
+        })
       return send(response, 200, { payments: enabled })
     }
     if (request.method === 'POST' && url.pathname === '/api/customers') {
@@ -2458,6 +2638,11 @@ const server = http.createServer(async (request, response) => {
 
       const stockRequested = new Map()
       const variantStockRequested = new Map()
+      // How many of each saved cart line this order consumes. The same saved line can be
+      // requested as several rows, so compare the summed quantity instead of row by row.
+      const savedCartConsumed = new Map()
+      const savedCartLines = signedInCustomer && Array.isArray(signedInCustomer.cart) ? signedInCustomer.cart : []
+      const savedCartKey = (productId, variants) => `${productId}\u0000${productVariantStockKey(variants)}`
       const items = []
       let subtotal = 0
       for (const requestedItem of requestedOrder.items) {
@@ -2472,10 +2657,11 @@ const server = http.createServer(async (request, response) => {
         const color = String(requestedItem.variants?.color || '')
         const variants = { ...(size ? { size } : {}), ...(color ? { color } : {}) }
         if (signedInCustomer) {
-          const savedCartItem = (Array.isArray(signedInCustomer.cart) ? signedInCustomer.cart : []).find((item) =>
-            String(item.productId) === id && productVariantStockKey(item.variants || {}) === productVariantStockKey(variants)
-          )
-          if (!savedCartItem || savedCartItem.selected === false || quantity > Number(savedCartItem.quantity)) {
+          const lineKey = savedCartKey(id, variants)
+          const savedCartItem = savedCartLines.find((item) => savedCartKey(String(item.productId), item.variants || {}) === lineKey)
+          const consumed = (savedCartConsumed.get(lineKey) || 0) + quantity
+          savedCartConsumed.set(lineKey, consumed)
+          if (!savedCartItem || savedCartItem.selected === false || consumed > Number(savedCartItem.quantity)) {
             return send(response, 409, { error: 'Your selected cart items changed. Refresh your cart and try again.' })
           }
         }
@@ -2487,7 +2673,7 @@ const server = http.createServer(async (request, response) => {
           const nextVariantStock = (requestedForProduct.get(key) || 0) + quantity
           requestedForProduct.set(key, nextVariantStock)
           variantStockRequested.set(id, requestedForProduct)
-          if (nextVariantStock > Number(product.variantStock[key] || 0)) return send(response, 409, { error: `Insufficient stock for ${product.nameEn || product.name} (${[size, color].filter(Boolean).join(' · ')}).` })
+          if (nextVariantStock > Number(product.variantStock[key] || 0)) return send(response, 409, { error: `Insufficient stock for ${product.nameEn || product.name} (${[size, color].filter(Boolean).join(' Â· ')}).` })
         }
         const price = Number(product.discountPrice ?? product.price)
         if (!Number.isFinite(price) || price < 0) return send(response, 400, { error: 'A product has an invalid price. Please contact the shop.' })
@@ -2562,7 +2748,17 @@ const server = http.createServer(async (request, response) => {
       }
 
       const customer = signedInCustomer || { id: crypto.randomUUID(), phone: customerPhone, orderIds: [], userId: null }
-      Object.assign(customer, { name: customerName, phone: customerPhone, address: customerAddress, ...(customerId ? { cart: [] } : {}), orderIds: [...new Set([...(customer.orderIds || []), order.id])] })
+      // Only the ordered lines leave the saved cart, so anything added while checkout was
+      // open is still there afterwards.
+      const remainingCart = signedInCustomer
+        ? savedCartLines.flatMap((item) => {
+            const lineKey = savedCartKey(String(item.productId), item.variants || {})
+            const ordered = savedCartConsumed.get(lineKey) || 0
+            const left = Number(item.quantity) - ordered
+            return left > 0 ? [{ ...item, quantity: left }] : []
+          })
+        : []
+      Object.assign(customer, { name: customerName, phone: customerPhone, address: customerAddress, ...(customerId ? { cart: remainingCart } : {}), orderIds: [...new Set([...(customer.orderIds || []), order.id])] })
       if (idempotencyRecord) data.orderIdempotency = [...data.orderIdempotency, { ...idempotencyRecord, orderId: order.id }].slice(-1000)
       data.customers = [customer, ...data.customers.filter((item) => item.id !== customer.id)]
       const guestKeyHash = customerId ? '' : guestOrderAccessHash(request)
@@ -2613,6 +2809,8 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: 'Not found.' })
   } catch (error) {
     console.error('[api] Request failed:', error.message)
+    // The response may already be committed (aborted read, client disconnect) — only send if we still can.
+    if (response.headersSent || response.writableEnded) return
     if (error.code === 'SHOP_DATA_CONFLICT') return send(response, 409, { error: 'Shop data changed while processing your request. Please retry.' })
     if (Number.isInteger(error.status) && error.status >= 400 && error.status < 500) return send(response, error.status, { error: error.message })
     return send(response, 500, { error: 'The request could not be completed. Please try again later.' })

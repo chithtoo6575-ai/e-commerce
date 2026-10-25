@@ -4,6 +4,11 @@ import BuyerAuth from './BuyerAuth'
 import { t } from './lib/i18n'
 import { AddToCartButton, CartIcon } from './CartControls'
 import { getProductStock, getProductVariants, hasVariantStock, variantStockKey } from './lib/productVariants'
+import SupportChannelList from './SupportChannelList'
+
+const STORE_LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`
+// Header mark: white letterform only (no cart glyph, no shadow).
+const HEADER_LOGO_URL = `${import.meta.env.BASE_URL}logo-white.svg`
 
 function hasValidCartVariants(item, product) {
   const { sizes, colors } = getProductVariants(product)
@@ -20,10 +25,113 @@ function getCartItemIssue(item, product) {
   return ''
 }
 
-function getSupportHref(value) {
-  const link = String(value || '').trim()
-  return /^(https?:\/\/|viber:\/\/|tg:\/\/|tel:)/i.test(link) || /^\/(?!\/)/.test(link) ? link : ''
+/* Myanmar region/state → townships used by the Add New Address form */
+const MYANMAR_REGIONS = {
+  'Yangon Region': ['Yangon', 'Mandalay', 'Lashio', 'Taunggyi', 'Mawlamyine', 'Bago', 'Magway', 'Pyay', 'Myitkyina', 'Sagaing'],
+  'Mandalay Region': ['Mandalay', 'Pyin Oo Lwin', 'Kyaukse', 'Meiktila', 'Yamethin', 'Myingyan', 'Nyaung-U'],
+  'Naypyidaw Union Territory': ['Zabuthiri', 'Ottarathiri', 'Dekkhinathiri', 'Pobbathiri', 'Tatkon'],
+  'Ayeyarwady Region': ['Pathein', 'Hinthada', 'Maubin', 'Myaungmya', 'Bogale', 'Labutta', 'Pyapon'],
+  'Bago Region': ['Bago', 'Taungoo', 'Pyay', 'Tharrawaddy', 'Nattalin', 'Shwegyin'],
+  'Magway Region': ['Magway', 'Minbu', 'Pakokku', 'Thayet', 'Gangaw', 'Yenangyaung'],
+  'Sagaing Region': ['Sagaing', 'Monywa', 'Shwebo', 'Katha', 'Kale', 'Tamu', 'Hkamti'],
+  'Tanintharyi Region': ['Dawei', 'Myeik', 'Kawthaung', 'Bokpyin', 'Thayetchaung'],
+  'Kachin State': ['Myitkyina', 'Bhamo', 'Putao', 'Hpakant', 'Mohnyin'],
+  'Kayah State': ['Loikaw', 'Demoso', 'Hpasawng', 'Bawlake', 'Mese'],
+  'Kayin State': ['Hpa-An', 'Myawaddy', 'Kawkareik', 'Hlaingbwe', 'Thandaunggyi'],
+  'Chin State': ['Hakha', 'Falam', 'Mindat', 'Palan', 'Tonzang', 'Tiddim'],
+  'Mon State': ['Mawlamyine', 'Thaton', 'Ye', 'Mudon', 'Paung'],
+  'Rakhine State': ['Sittwe', 'Kyaukpyu', 'Thandwe', 'Mrauk U', 'Maungdaw'],
+  'Shan State': ['Taunggyi', 'Lashio', 'Kengtung', 'Muse', 'Tachileik', 'Nyaungshwe', 'Hsipaw'],
+  'Magway': ['Magway', 'Minbu', 'Pakokku', 'Thayet'],
+  'Tachileik': ['Tachileik', 'Kengtung', 'Monghsat']
 }
+
+const MYANMAR_REGIONS_MY = {
+  'Yangon Region': 'ရန်ကုန်တိုင်းဒေသကြီး',
+  'Mandalay Region': 'မန္တလေးတိုင်းဒေသကြီး',
+  'Naypyidaw Union Territory': 'နေပြည်တော် ပြည်ထောင်စုနယ်မြေ',
+  'Ayeyarwady Region': 'ဧရာဝတီတိုင်းဒေသကြီး',
+  'Bago Region': 'ပဲခူးတိုင်းဒေသကြီး',
+  'Magway Region': 'မကွေးတိုင်းဒေသကြီး',
+  'Sagaing Region': 'စစ်ကိုင်းတိုင်းဒေသကြီး',
+  'Tanintharyi Region': 'တနင်္သာရီတိုင်းဒေသကြီး',
+  'Kachin State': 'ကချင်ပြည်နယ်',
+  'Kayah State': 'ကယားပြည်နယ်',
+  'Kayin State': 'ကရင်ပြည်နယ်',
+  'Chin State': 'ချင်းပြည်နယ်',
+  'Mon State': 'မွန်ပြည်နယ်',
+  'Rakhine State': 'ရခိုင်ပြည်နယ်',
+  'Shan State': 'ရှမ်းပြည်နယ်'
+}
+
+const MYANMAR_TOWNSHIP_MY = {
+  'Yangon': 'ရန်ကုန်', 'Mandalay': 'မန္တလေး', 'Lashio': 'လားရှိုး', 'Taunggyi': 'တောင်ကြီး',
+  'Mawlamyine': 'မော်လမြိုင်', 'Bago': 'ပဲခူး', 'Magway': 'မကွေး', 'Pyay': 'ပြည်',
+  'Myitkyina': 'မြစ်ကြီးနား', 'Sagaing': 'စစ်ကိုင်း', 'Pyin Oo Lwin': 'ပြင်ဦးလွင်',
+  'Kyaukse': 'ကျောက်ဆည်', 'Meiktila': 'မိတ္ထီလာ', 'Yamethin': 'ရမည်းသင်း',
+  'Myingyan': 'မြင်းခြံ', 'Nyaung-U': 'ညောင်ဦး', 'Pathein': 'ပုသိမ်', 'Hinthada': 'ဟင်္သာတ',
+  'Maubin': 'မော်လမြိုင်', 'Myaungmya': 'မြောင်းမြ', 'Bogale': 'ဘိုကလေး', 'Labutta': 'လပွတ္တာ',
+  'Pyapon': 'ဖျာပုံ', 'Taungoo': 'တောင်ငူ', 'Tharrawaddy': 'သာယာဝတီ', 'Nattalin': 'နတ္တလင်း',
+  'Shwegyin': 'ရွှေကျင်', 'Minbu': 'မင်းဘူး', 'Pakokku': 'ပခုက္ကူ', 'Thayet': 'သရက်',
+  'Gangaw': 'ဂန်ဂေါ', 'Yenangyaung': 'ရေနံချောင်း', 'Monywa': 'မုံရွာ', 'Shwebo': 'ရွှေဘို',
+  'Katha': 'ကသာ', 'Kale': 'ကလေး', 'Tamu': 'တမူး', 'Hkamti': 'ခန္တီး', 'Dawei': 'ထားဝယ်',
+  'Myeik': 'မြိတ်', 'Kawthaung': 'ကော့သောင်း', 'Bokpyin': 'ဘုတ်ပြင်း', 'Thayetchaung': 'သရက်ချောင်း',
+  'Bhamo': 'ဗန်းမော်', 'Putao': 'ပူတာအို', 'Hpakant': 'ဖားကန့်', 'Mohnyin': 'မိုးကောင်း',
+  'Loikaw': 'လွိုင်ကော်', 'Demoso': 'ဒီမောဆို', 'Hpasawng': 'ဖားဆောင်း', 'Bawlake': 'ဘောလခဲ',
+  'Mese': 'မယ်စဲ့', 'Hpa-An': 'ဘားအံ', 'Myawaddy': 'မြဝတီ', 'Kawkareik': 'ကော့ကရိတ်',
+  'Hlaingbwe': 'လှိုင်းဘွဲ့', 'Thandaunggyi': 'သံတောင်ကြီး', 'Hakha': 'ဟားခါး', 'Falam': 'ဖလမ်း',
+  'Mindat': 'မင်းတပ်', 'Palan': 'ပင်လုံ', 'Tonzang': 'တွန်းဇံ', 'Tiddim': 'တီးတိန်', 'Thaton': 'သထုံ',
+  'Ye': 'ရေး', 'Mudon': 'မုဒုံ', 'Paung': 'ပေါင်', 'Sittwe': 'စစ်တွေ', 'Kyaukpyu': 'ကျောက်ဖြူ',
+  'Thandwe': 'သံတွဲ', 'Mrauk U': 'မြောက်ဦး', 'Maungdaw': 'မောင်တော', 'Kengtung': 'ကျိုင်းတုံ',
+  'Muse': 'မူဆယ်', 'Tachileik': 'တာချီလိတ်', 'Nyaungshwe': 'ညောင်ရွှေ', 'Hsipaw': 'သီပေါ',
+  'Zabuthiri': 'ဇမ္ဗူသီရိ', 'Ottarathiri': 'ဥတ္တရသီရိ', 'Dekkhinathiri': 'ဒက္ခိဏသီရိ',
+  'Pobbathiri': 'ပုဗ္ဗသီရိ', 'Tatkon': 'တပ်ကုန်း', 'Monghsat': 'မိုင်းဆတ်'
+}
+
+/* Checkout review screen: payment choices shown as radio cards */
+const CHECKOUT_PAYMENT_KINDS = [
+  {
+    id: 'cod',
+    titleKey: 'Cash on Delivery (COD)',
+    subtitleKey: 'Pay cash when the item arrives',
+    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></svg>
+  },
+  {
+    id: 'wallet',
+    titleKey: 'Mobile Wallet',
+    subtitleKey: 'KBZPay / WavePay / CB Pay and more',
+    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5" /><path d="M11 18h2" /></svg>
+  },
+  {
+    id: 'bank',
+    titleKey: 'Bank Transfer',
+    subtitleKey: 'Transfer directly to the shop bank account',
+    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-6 9 6" /><path d="M5 10v9h14v-9" /><path d="M9 19v-5h6v5" /><path d="m2 21h20" /></svg>
+  }
+]
+
+function getPaymentKind(payment) {
+  if (!payment) return 'wallet'
+  // Explicit cash/bank flags win, so a shop-configured "kind" can never make a
+  // COD account ask for a payment slip (or a transfer account skip it).
+  if (payment.type === 'cash' || payment.id === 'cod') return 'cod'
+  if (payment.kind) return payment.kind
+  const hint = `${payment.type || ''} ${payment.name || ''} ${payment.nameMyanmar || ''} ${payment.id || ''}`.toLowerCase()
+  if (hint.includes('cod') || hint.includes('cash')) return 'cod'
+  if (hint.includes('bank') || hint.includes('transfer') || hint.includes('ဘန်')) return 'bank'
+  return 'wallet'
+}
+
+function createEmptyAddressForm() {
+  return { fullName: '', phone: '', region: '', township: '', addressLine: '', mapLocation: '', isDefault: false }
+}
+
+function isPhoneNumber(value) {
+  const digits = String(value || '').replace(/[^0-9]/g, '')
+  return digits.length >= 7 && digits.length <= 15
+}
+
+
 
 export default function MobileApp({
   route,
@@ -51,6 +159,9 @@ export default function MobileApp({
   storefrontSections = [],
   storefrontLayout = [],
   supportChannels = [],
+  supportChannelsLoading = false,
+  supportChannelsError = '',
+  loadSupportChannels,
   storefrontNotifications = [],
   language,
   setLanguage,
@@ -65,8 +176,8 @@ export default function MobileApp({
   setSelectedCategory,
   searchQuery,
   setSearchQuery,
-  recentSearches,
-  setRecentSearches,
+  recentSearches: _recentSearches,
+  setRecentSearches: _setRecentSearches,
   sortBy,
   setSortBy,
   filters,
@@ -100,12 +211,12 @@ export default function MobileApp({
   cartTotal,
   startApp,
   beginCheckout,
+  exitCheckoutToCart,
   submitAuth,
   continueAsGuest,
   addToCart,
   updateQuantity,
   removeFromCart,
-  updateCartItem,
   toggleWishlist,
   saveSearch,
   moveWishlistItemToCart,
@@ -114,11 +225,11 @@ export default function MobileApp({
   removeAddress,
   deleteAccount,
   updateProfile,
-  _validateCheckoutStep,
+  validateCheckoutStep,
   handlePaymentSlip,
   placeOrder,
   logout,
-  CATEGORY_TREE,
+  CATEGORY_TREE: _CATEGORY_TREE,
   DELIVERY_METHODS,
   formatPrice,
   ONBOARDING_KEY
@@ -135,6 +246,8 @@ export default function MobileApp({
   const [toastMessage, setToastMessage] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [activeAccountModal, setActiveAccountModal] = useState(null)
+  // Screen-reader announcement after a support channel is opened.
+  const [supportNotice, setSupportNotice] = useState('')
   const [activeBannerIndex, setActiveBannerIndex] = useState(0)
   const bannerTrackRef = useRef(null)
   const bannerResumeTimeoutRef = useRef(null)
@@ -145,16 +258,14 @@ export default function MobileApp({
   const [orderChatData, setOrderChatData] = useState(null)
   const [chatDraft, setChatDraft] = useState('')
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
-  const [newAddressInput, setNewAddressInput] = useState('')
-  const [newAddressLabel, setNewAddressLabel] = useState('Home')
+  const [addressScreen, setAddressScreen] = useState('list')
   const [editingAddressId, setEditingAddressId] = useState('')
-  const [savedForLater, setSavedForLater] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('hto_saved_for_later') || '[]') } catch { return [] }
-  })
+  const [addressForm, setAddressForm] = useState(createEmptyAddressForm())
+  const [addressFormErrors, setAddressFormErrors] = useState({})
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
-  const [orderStatusFilter, setOrderStatusFilter] = useState('All')
+  const [orderStatusFilter, setOrderStatusFilter] = useState('To Receive')
   const [profileName, setProfileName] = useState(user?.name || '')
   const [profilePhone, setProfilePhone] = useState(user?.phone || '')
   const [profileBusy, setProfileBusy] = useState(false)
@@ -167,7 +278,6 @@ export default function MobileApp({
       return [{ id: 'welcome', title: 'Welcome to HTOO', message: 'Discover new styles, seasonal offers, and fresh arrivals.', read: false }]
     }
   })
-  const unreadNotifications = notifications.filter((notification) => !notification.read).length
   const activeBanners = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     const heroLayout = storefrontLayout.find((block) => block.id === 'block-hero')
@@ -201,14 +311,6 @@ export default function MobileApp({
       console.warn('[notifications] Could not persist notification state.', storageError)
     }
   }, [notifications])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('hto_saved_for_later', JSON.stringify(savedForLater))
-    } catch (storageError) {
-      console.warn('[cart] Could not persist cart selections.', storageError)
-    }
-  }, [savedForLater])
 
   useEffect(() => {
     setProfileName(user?.name || '')
@@ -307,12 +409,12 @@ export default function MobileApp({
   const cartCount = useMemo(() => cart.reduce((count, item) => count + Number(item.quantity || 0), 0), [cart])
   const availableSizes = useMemo(() => Array.from(new Set(products.flatMap((product) => getProductVariants(product).sizes).filter(Boolean))), [products])
   const availableColors = useMemo(() => Array.from(new Set(products.flatMap((product) => getProductVariants(product).colors).filter(Boolean))), [products])
-  const orderStatusFilters = ['All', 'Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled']
+  const orderStatusFilters = ['To Receive', 'Received', 'Cancellations']
   const matchesOrderStatus = (order, status) => {
     const currentStatus = String(order.status || '').toLowerCase()
-    if (status === 'Pending') return ['new', 'pending'].includes(currentStatus)
-    if (status === 'Processing') return ['processing', 'packing'].includes(currentStatus)
-    return status === 'All' || currentStatus === status.toLowerCase()
+    if (status === 'Received') return ['delivered', 'completed', 'received'].includes(currentStatus)
+    if (status === 'Cancellations') return ['cancelled', 'canceled', 'cancel'].includes(currentStatus)
+    return !['delivered', 'completed', 'received', 'cancelled', 'canceled', 'cancel'].includes(currentStatus)
   }
 
   // Featured, Best Sellers, New Arrivals, Deals, Recommended
@@ -470,28 +572,104 @@ export default function MobileApp({
   function handleBuyNow(product, variants = null, quantity = 1) {
     if (!handleAddToCart(product, variants, quantity)) return
     setViewingProduct(null)
-    beginCheckout()
+    beginCheckout('review')
   }
 
-  function handleAddNewAddress(e) {
-    e.preventDefault()
-    if (!newAddressInput.trim() || !addAddress) return
+  function resetAddressForm() {
+    setAddressForm(createEmptyAddressForm())
+    setAddressFormErrors({})
+  }
+
+  function openAddressList() {
+    setEditingAddressId('')
+    setAddressScreen('list')
+    resetAddressForm()
+    setActiveAccountModal('addresses')
+  }
+
+  function openAddressForm(address = null) {
+    setEditingAddressId(address?.id || '')
+    setAddressForm(address ? {
+      fullName: address.fullName || user?.name || '',
+      phone: address.phone || user?.phone || '',
+      region: address.region || '',
+      township: address.township || '',
+      addressLine: address.addressLine || address.value || '',
+      mapLocation: address.mapLocation || '',
+      isDefault: Boolean(address.default ?? address.isDefault)
+    } : { ...createEmptyAddressForm(), fullName: user?.name || '', phone: user?.phone || '', isDefault: !addressBook.length })
+    setAddressFormErrors({})
+    setAddressScreen('form')
+  }
+
+  function updateAddressField(field, value) {
+    setAddressForm((current) => {
+      const next = { ...current, [field]: value }
+      if (field === 'region') next.township = ''
+      return next
+    })
+    setAddressFormErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
+
+  function handleSaveAddress(event) {
+    event.preventDefault()
+    const errors = {}
+    if (!addressForm.fullName.trim()) errors.fullName = 'Please enter your full name.'
+    if (!addressForm.phone.trim()) errors.phone = 'Please enter your phone number.'
+    else if (!isPhoneNumber(addressForm.phone)) errors.phone = 'Enter a valid phone number.'
+    if (!addressForm.region) errors.region = 'Please select a region or state.'
+    if (!addressForm.township) errors.township = 'Please select a township.'
+    if (!addressForm.addressLine.trim()) errors.addressLine = 'Please enter your full delivery address.'
+    if (!addressForm.mapLocation) errors.mapLocation = 'Please pin your location on the map.'
+    setAddressFormErrors(errors)
+    if (Object.keys(errors).length) {
+      showToast(tr('Please fill in all required fields.'))
+      const firstField = document.getElementById(`mob-address-${Object.keys(errors)[0]}`)
+      firstField?.focus?.()
+      firstField?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    const payload = {
+      label: editingAddressId ? addressBook.find((item) => item.id === editingAddressId)?.label || 'Home' : 'Home',
+      fullName: addressForm.fullName.trim(),
+      phone: addressForm.phone.trim(),
+      region: addressForm.region,
+      township: addressForm.township,
+      addressLine: addressForm.addressLine.trim(),
+      mapLocation: addressForm.mapLocation,
+      value: `${addressForm.addressLine.trim()}, ${addressForm.township}, ${addressForm.region}`,
+      default: addressForm.isDefault || !addressBook.length
+    }
     if (editingAddressId) {
-      updateAddress(editingAddressId, { label: newAddressLabel, value: newAddressInput.trim() })
-      setEditingAddressId('')
+      updateAddress(editingAddressId, payload)
       showToast(tr('Address updated.'))
     } else {
-      addAddress({ label: newAddressLabel, value: newAddressInput.trim(), default: addressBook.length === 0 })
+      addAddress(payload)
       showToast(tr('New address saved!'))
     }
-    setNewAddressInput('')
+    setEditingAddressId('')
+    resetAddressForm()
+    setAddressScreen('list')
   }
 
-  function saveCartItemForLater(item) {
-    const key = item.cartKey || item.id
-    setSavedForLater((current) => [...current.filter((saved) => (saved.cartKey || saved.id) !== key), item])
-    removeFromCart(key)
-    showToast(tr('Saved for later.'))
+  function pickMapLocation() {
+    if (!navigator.geolocation) {
+      showToast(tr('Location is not available on this device.'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        updateAddressField('mapLocation', `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+      },
+      () => showToast(tr('Unable to get your current location. Please pick it manually.')),
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
   }
 
   async function confirmDeleteAccount() {
@@ -500,7 +678,6 @@ export default function MobileApp({
     try {
       await deleteAccount()
       setNotifications([])
-      setSavedForLater([])
       try { localStorage.removeItem('hto_customer_notifications'); localStorage.removeItem('hto_saved_for_later') } catch (storageError) {
         console.warn('[account] Could not clear local notification and saved-item data.', storageError)
       }
@@ -525,6 +702,12 @@ export default function MobileApp({
     } finally {
       setProfileBusy(false)
     }
+  }
+
+  // Open the read-only order detail view
+  function openOrderDetail(order) {
+    setSelectedOrder(order)
+    setActiveAccountModal('chat')
   }
 
   // Load Order Chat when opening an order
@@ -573,26 +756,36 @@ export default function MobileApp({
     }
   }
 
-  // Mobile Order Placement with loading state
-  async function handleMobilePlaceOrder() {
+  // Shared by the review and final checkout steps: which payment kind is active
+  // (cod / wallet / bank) and the accounts configured for it.
+  const activePaymentKind = getPaymentKind(selectedPaymentAccount)
+  const paymentKindAccounts = paymentMethods.filter((payment) => getPaymentKind(payment) === activePaymentKind)
+
+  // Mobile Order Placement with loading state. Resolves to true only when the
+  // order was accepted and the confirmation screen is about to be shown.
+  async function handleMobilePlaceOrder(fromStep = checkoutStep) {
+    const stepMessage = validateCheckoutStep(fromStep)
+    if (stepMessage) { setError(tr(stepMessage)); return false }
+    // The selected payment option is the source of truth for the request.
+    if (!selectedPaymentAccount) { setError(tr('Select an active payment method.')); return false }
+    if (!isCashPayment && !paymentSlip) { setError(tr('Upload your payment slip to continue.')); return false }
+    setError('')
     setIsSubmittingOrder(true)
     try {
-      await placeOrder()
+      const placed = await placeOrder()
+      if (placed?.id || placed?.orderNumber) setRoute({ page: 'confirmation' })
+      return Boolean(placed)
     } catch (submitError) {
       console.error('[checkout] Mobile place-order handler failed', submitError)
       const detail = submitError?.message || String(submitError)
       setError(import.meta.env.DEV
         ? `Unable to place order: ${detail}`
         : 'Unable to place order. Please check your payment slip and try again.')
+      return false
     } finally {
       setIsSubmittingOrder(false)
     }
   }
-
-  // Active payment account details
-  const accountNumber = selectedPaymentAccount?.type === 'bank' || selectedPaymentAccount?.id === 'bank'
-    ? selectedPaymentAccount?.accountNumber
-    : selectedPaymentAccount?.phoneNumber
 
   // --------------------------------------------------------------------------
   // ONBOARDING / LAUNCH SCREEN (MOBILE)
@@ -601,14 +794,14 @@ export default function MobileApp({
     return (
       <main className="mobile-shell mob-confirm-screen">
         <div className="mob-confirm-card" style={{ marginTop: '2rem' }}>
-          <img src="/logo.svg" alt="" style={{ width: '56px', height: '56px', display: 'block', margin: '0 auto 1.25rem' }} />
+          <img src={STORE_LOGO_URL} alt="" style={{ width: '56px', height: '56px', display: 'block', margin: '0 auto 1.25rem' }} />
           <span className="mob-hero-badge">HTOO ONLINE SHOP</span>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0.5rem 0', color: 'var(--mob-ink)' }}>{tr('Dress Better.')}<br />{tr('Live Brighter.')}</h1>
           <label className="mob-launch-language">
-            <span>{language === 'my' ? '🇲🇲' : '🇺🇸'} {tr('Language')}</span>
+            <span>{language === 'my' ? 'ðŸ‡²ðŸ‡²' : 'ðŸ‡ºðŸ‡¸'} {tr('Language')}</span>
             <select value={language} onChange={(event) => setLanguage(event.target.value)}>
               <option value="my">🇲🇲 မြန်မာ</option>
-              <option value="en">🇺🇸 English</option>
+              <option value="en">ðŸ‡ºðŸ‡¸ English</option>
             </select>
           </label>
           <p style={{ fontSize: '0.86rem', color: 'var(--mob-muted)', lineHeight: 1.5, marginBottom: '1.5rem' }}>
@@ -676,7 +869,7 @@ export default function MobileApp({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
             {selectedOrder && (
               <button className="mob-btn-secondary" onClick={() => loadOrderChat(selectedOrder)}>
-                💬 View Order & Chat with Shop
+                ðŸ’¬ View Order & Chat with Shop
               </button>
             )}
             <button className="mob-btn-primary" onClick={() => { setActiveTab('home'); setRoute({ page: 'main' }) }}>
@@ -692,395 +885,275 @@ export default function MobileApp({
   // CHECKOUT SCREEN (MOBILE STEP-BY-STEP)
   // --------------------------------------------------------------------------
   if (route.page === 'checkout') {
-    const selectedDelivery = DELIVERY_METHODS.find((m) => m.id === checkoutForm.deliveryMethod)
-    function validateMobileStep(step) {
-      if (!cart.length || !cart.some((item) => item.selected !== false)) return 'Select at least one available item to continue.'
-      const unavailableItem = cart.find((item) => item.selected !== false && (products.find((product) => String(product.id) === String(item.id))?.stock ?? 0) < item.quantity)
-      if (unavailableItem) return tr('This item has insufficient stock. Update the quantity or remove it to continue.')
-      const invalidVariantItem = cart.find((item) => {
-        if (item.selected === false) return false
-        const product = products.find((candidate) => String(candidate.id) === String(item.id))
-        return product && !hasValidCartVariants(item, product)
-      })
-      if (invalidVariantItem) return tr('A selected size or color is no longer available. Remove this item and add an available option to continue.')
-      if (step === 1) {
-        if (!checkoutForm.name.trim()) return 'Enter your full name.'
-        if (!checkoutForm.phone.trim()) return 'Enter your phone number.'
-        if (!/^(?:\+?95|0)\d{7,13}$/.test(checkoutForm.phone.replace(/[\s()-]/g, ''))) return 'Enter a valid phone number.'
-        if (!checkoutForm.shippingAddress.trim()) return 'Enter your complete delivery address.'
-      }
-      if (step === 2 && !checkoutForm.deliveryMethod) return 'Select a delivery method.'
-      if (step === 3 && !selectedPaymentAccount) return 'Select an active payment method.'
-      if (step === 4 && !isCashPayment && !paymentSlip) return 'Upload your payment slip to continue.'
-      return ''
+    const checkoutIsReview = checkoutStep === 'review'
+    // "final" is a legacy step kept only so older drafts still render the review screen.
+    const checkoutIsFinal = checkoutStep === 'final'
+
+    function goToStorefrontStep(step) {
+      // The wizard is bypassed: "edit" entry points return to the cart instead of step forms.
+      if (typeof step === 'number') { exitCheckoutToCart(); return }
+      setError('')
+      setCheckoutStep(step)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
+
+    function handleCheckoutEditAddress() {
+      setActiveTab('account')
+      setRoute({ page: 'main' })
+      openAddressList()
+    }
+
     return (
-      <main className="mobile-shell mob-checkout-screen">
+      <main className={`mobile-shell mob-checkout-screen ${checkoutIsReview || checkoutIsFinal ? 'mob-checkout-screen--review' : ''}`}>
         {/* Header */}
         <div className="mob-checkout-header">
-          <button className="mob-back-btn" onClick={() => { setError(''); setRoute({ page: 'main' }) }}>
-            <span style={{ fontSize: '1.1rem' }}>‹</span> {tr('Back to Cart')}
+          <button className="mob-back-btn" onClick={() => {
+            setError('')
+            if (checkoutIsFinal) { setCheckoutStep('review'); return }
+            // Straight back to the cart screen — never into the step-by-step form.
+            exitCheckoutToCart()
+          }}>
+            <span style={{ fontSize: '1.1rem' }}>‹</span> {tr('Cart')}
           </button>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 800 }}>{tr('Checkout')}</div>
-            <small style={{ fontSize: '0.72rem', color: 'var(--mob-muted)' }}>{tr('Step')} {checkoutStep} of 5</small>
+            {!checkoutIsReview && !checkoutIsFinal && (
+              <small style={{ fontSize: '0.72rem', color: 'var(--mob-muted)' }}>{tr('Step')} {checkoutStep} of 5</small>
+            )}
           </div>
           <div style={{ width: '40px' }} />
         </div>
 
         {/* Progress Bar */}
-        <div className="mob-steps-track">
-          {[1, 2, 3, 4, 5].map((s) => (
-            <div key={s} className={`mob-step-bar ${checkoutStep >= s ? 'active' : ''}`} />
-          ))}
-        </div>
-
-        {/* Step 1: Customer Info & Address */}
-        {checkoutStep === 1 && (
-          <div className="mob-checkout-card">
-            <h3>1. {tr('Customer Information')}</h3>
-            <p className="mob-checkout-card-sub">{tr('Enter your delivery details for accurate shipping.')}</p>
-            {addressBook.length > 0 && (
-              <div className="mob-form-group">
-                <label className="mob-form-label">{tr('Use a saved address')}</label>
-                <select className="mob-form-input" value="" onChange={(event) => {
-                  const address = addressBook.find((item) => item.id === event.target.value)
-                  if (address) setCheckoutForm({ ...checkoutForm, shippingAddress: address.value, name: checkoutForm.name || user?.name || '', phone: checkoutForm.phone || user?.phone || '' })
-                }}>
-                  <option value="">{tr('Choose a saved address')}</option>
-                  {addressBook.map((address) => <option key={address.id} value={address.id}>{address.label}{address.default ? ' · Default' : ''}</option>)}
-                </select>
-              </div>
-            )}
-
-            <div className="mob-form-group">
-              <label className="mob-form-label">{tr('Full Name *')}</label>
-              <input
-                className="mob-form-input"
-                autoComplete="name"
-                required
-                value={checkoutForm.name}
-                onChange={(e) => setCheckoutForm({ ...checkoutForm, name: e.target.value })}
-                placeholder={tr('e.g. Mg Mg')}
-              />
-            </div>
-
-            <div className="mob-form-group">
-              <label className="mob-form-label">{tr('Phone Number *')}</label>
-              <input
-                className="mob-form-input"
-                autoComplete="tel"
-                type="tel"
-                required
-                value={checkoutForm.phone}
-                onChange={(e) => setCheckoutForm({ ...checkoutForm, phone: e.target.value })}
-                placeholder="09xxxxxxxxx"
-              />
-            </div>
-
-            {!user?.email && (
-              <div className="mob-form-group">
-                <label className="mob-form-label">{tr('Email (optional)')}</label>
-                <input
-                  className="mob-form-input"
-                  type="email"
-                  autoComplete="email"
-                  value={checkoutForm.email || ''}
-                  onChange={(event) => setCheckoutForm({ ...checkoutForm, email: event.target.value })}
-                  placeholder={tr('Email address')}
-                />
-              </div>
-            )}
-
-            <div className="mob-form-group">
-              <label className="mob-form-label">{tr('Township (optional)')}</label>
-              <input
-                className="mob-form-input"
-                autoComplete="address-level3"
-                value={checkoutForm.township || ''}
-                onChange={(event) => setCheckoutForm({ ...checkoutForm, township: event.target.value })}
-                placeholder={tr('Township')}
-              />
-            </div>
-
-            <div className="mob-form-group">
-              <label className="mob-form-label">{tr('City / Region (optional)')}</label>
-              <input
-                className="mob-form-input"
-                autoComplete="address-level2"
-                value={checkoutForm.city || ''}
-                onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })}
-                placeholder={tr('City or region')}
-              />
-            </div>
-
-            <div className="mob-form-group">
-              <label className="mob-form-label">{tr('Delivery Address *')}</label>
-              <textarea
-                className="mob-form-textarea"
-                autoComplete="street-address"
-                required
-                value={checkoutForm.shippingAddress}
-                onChange={(e) => setCheckoutForm({ ...checkoutForm, shippingAddress: e.target.value })}
-                placeholder={tr('House / street, township, city/region, delivery notes')}
-              />
-            </div>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', marginTop: '0.5rem' }}>
-              <input
-                type="checkbox"
-                checked={checkoutForm.saveAddress}
-                onChange={(e) => setCheckoutForm({ ...checkoutForm, saveAddress: e.target.checked })}
-              /> {tr('Save this address for future orders')}
-            </label>
+        {!checkoutIsReview && !checkoutIsFinal && (
+          <div className="mob-steps-track">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <div key={s} className={`mob-step-bar ${checkoutStep >= s ? 'active' : ''}`} />
+            ))}
           </div>
         )}
 
-        {/* Step 2: Delivery Method */}
-        {checkoutStep === 2 && (
-          <div className="mob-checkout-card">
-            <h3>2. {tr('Delivery Method')}</h3>
-            <p className="mob-checkout-card-sub">{tr('Choose how you want to receive your items.')}</p>
-
-            {DELIVERY_METHODS.map((method) => {
-              const isSelected = checkoutForm.deliveryMethod === method.id
-              const isCarGate = method.id === 'cargate'
-              return (
-                <label key={method.id} className={`mob-radio-card ${isSelected ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="deliveryMethod"
-                    checked={isSelected}
-                    onChange={() => setCheckoutForm({ ...checkoutForm, deliveryMethod: method.id })}
-                  />
-                  <div className="mob-radio-info">
-                    <span className="mob-radio-title">{tr(method.label)}</span>
-                    <span className="mob-radio-desc">
-                      {isCarGate
-                        ? `Pickup fee: ${formatPrice(settings.carGatePickupFee)}`
-                        : tr('Door-to-door standard city delivery')}
-                    </span>
-                  </div>
-                  <div className="mob-radio-circle" />
-                </label>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Step 3: Payment Method (ACTIVE accounts from shop owner) */}
-        {checkoutStep === 3 && (
-          <div className="mob-checkout-card">
-            <h3>3. {tr('Payment Method')}</h3>
-            <p className="mob-checkout-card-sub">{tr('Select from the shop owner’s active payment options.')}</p>
-
-            {paymentMethods.length > 0 ? (
-              paymentMethods.map((payment) => {
-                const isSelected = selectedPaymentAccount?.id === payment.id
-                return (
-                  <label key={payment.id} className={`mob-radio-card ${isSelected ? 'selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name="paymentAccount"
-                      value={payment.id}
-                      checked={isSelected}
-                      onChange={() => {
-                        setCheckoutForm({ ...checkoutForm, paymentAccountId: payment.id })
-                        setPaymentSlip('')
-                        setError('')
-                      }}
-                    />
-                    <div className="mob-radio-info">
-                      <span className="mob-radio-title">{language === 'my' ? payment.nameMyanmar || payment.name : payment.name}</span>
-                      <span className="mob-radio-desc">
-                        {payment.id === 'cod' || payment.type === 'cash'
-                          ? tr('Pay cash upon delivery')
-                          : `${payment.accountName || 'Active account'}${payment.phoneNumber ? ` · ${payment.phoneNumber}` : ''}${payment.bankName ? ` · ${payment.bankName}` : ''}`}
-                      </span>
+        {/* Order review / confirmation screen */}
+        {checkoutIsReview && (() => {
+          const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+          // Always show the customer's default saved address; the checkout form is only a fallback.
+          const defaultAddress = addressBook.find((address) => address.default) || addressBook[0] || null
+          const recipientName = defaultAddress?.fullName || checkoutForm.name || user?.name || ''
+          const recipientPhone = defaultAddress?.phone || checkoutForm.phone || user?.phone || ''
+          const detailedAddress = defaultAddress?.value || defaultAddress?.addressLine || checkoutForm.shippingAddress || ''
+          const addressMeta = defaultAddress
+            ? [defaultAddress.township, defaultAddress.region].filter(Boolean).join(', ')
+            : [checkoutForm.township, checkoutForm.city].filter(Boolean).join(', ')
+          const choosePaymentKind = (kindId) => {
+            const match = paymentMethods.find((payment) => getPaymentKind(payment) === kindId)
+            setError('')
+            setPaymentSlip('')
+            // Fall back to any active shop account so ordering never dead-ends on an unconfigured method.
+            setCheckoutForm({ ...checkoutForm, paymentAccountId: (match || selectedPaymentAccount)?.id || '' })
+          }
+          const kindAccounts = paymentKindAccounts
+          return (
+            <div className="mob-co-review">
+              {/* 1. Delivery address */}
+              <section className="mob-co-card">
+                <header className="mob-co-card-head">
+                  <button type="button" className="mob-co-link" onClick={handleCheckoutEditAddress}>{tr('Edit')} <span aria-hidden="true">›</span></button>
+                </header>
+                {recipientName || recipientPhone || detailedAddress ? (
+                  <div className="mob-co-address">
+                    <div className="mob-co-address-row">
+                      <span className="mob-co-avatar" aria-hidden="true">{(recipientName.trim().charAt(0) || '?').toUpperCase()}</span>
+                      <div className="mob-co-address-person">
+                        <div className="mob-co-address-name-row">
+                          <strong className="mob-co-address-name">{recipientName || tr('Name not provided')}</strong>
+                          <span className="mob-co-address-phone">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.68 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.2a2 2 0 0 1 2.11-.45c.9.32 1.85.55 2.81.68A2 2 0 0 1 22 16.92Z" /></svg>
+                            {recipientPhone || tr('Phone not provided')}
+                          </span>
+                        </div>
+                        <p className="mob-co-address-line">{detailedAddress || tr('Address not provided')}</p>
+                        {addressMeta && <span className="mob-co-address-meta">{addressMeta}</span>}
+                      </div>
                     </div>
-                    <div className="mob-radio-circle" />
-                  </label>
-                )
-              })
-            ) : (
-              <div className="mob-empty-desc" style={{ color: 'var(--mob-danger)', margin: '1rem 0' }}>
-                {tr('No active payment accounts are configured. Please contact the shop owner.')}
-              </div>
-            )}
-
-            {/* Selected payment account details card */}
-            {selectedPaymentAccount && (
-              <div className="mob-payment-detail-box">
-                <div className="mob-payment-detail-head">
-                  <div>
-                    <span style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--mob-brand)', textTransform: 'uppercase' }}>{tr('Selected Account')}</span>
-                    <h4 style={{ fontSize: '1rem', fontWeight: 800, margin: 0 }}>{language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name}</h4>
                   </div>
-                  <strong style={{ fontSize: '1.05rem', color: 'var(--mob-brand-dark)' }}>{formatPrice(cartTotal)}</strong>
+                ) : (
+                  <button type="button" className="mob-co-empty" onClick={() => goToStorefrontStep(1)}>
+                    + {tr('Add New Address')}
+                  </button>
+                )}
+              </section>
+
+              {/* 2. Order items */}
+              <section className="mob-co-card">
+                <header className="mob-co-card-head">
+                  <h2 className="mob-co-card-title">{itemCount} {tr('item')}</h2>
+                </header>
+                <div className="mob-co-items">
+                  {cart.map((item) => {
+                    const product = products.find((candidate) => String(candidate.id) === String(item.id))
+                    const price = Number(product?.discountPrice ?? product?.price ?? item.price)
+                    const stock = product ? getProductStock(product, item.variants) : item.quantity
+                    const variants = [item.variants?.size && `${tr('Size')} ${item.variants.size}`, item.variants?.color && item.variants.color].filter(Boolean).join(' · ')
+                    return (
+                      <article key={item.cartKey || item.id} className="mob-co-item">
+                        <div className="mob-co-item-thumb">
+                          {item.image ? <img src={item.image} alt="" loading="lazy" /> : <span aria-hidden="true">🛍️</span>}
+                        </div>
+                        <div className="mob-co-item-main">
+                          <h3 className="mob-co-item-name">{item.name}</h3>
+                          <p className="mob-co-item-variant">{variants || product?.sku || tr('Standard')}</p>
+                          <div className="mob-co-item-price-row">
+                            <strong className="mob-co-item-price">{formatPrice(price * item.quantity)}</strong>
+                            <div className="mob-cart-stepper mob-co-stepper" aria-label={`${tr('Quantity')}: ${item.quantity}`}>
+                              <button type="button" aria-label={`${tr('Decrease quantity')} ${item.name}`} disabled={item.quantity <= 1} onClick={() => updateQuantity(item.cartKey || item.id, -1)}>−</button>
+                              <span aria-live="polite">{item.quantity}</span>
+                              <button type="button" className="mob-cart-stepper-plus" aria-label={`${tr('Increase quantity')} ${item.name}`} disabled={item.quantity >= stock} onClick={() => updateQuantity(item.cartKey || item.id, 1)}>+</button>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                  {!cart.length && <p className="mob-co-card-sub">{tr('Your cart is empty.')}</p>}
+                </div>
+              </section>
+
+              {/* 3. Payment summary */}
+              <section className="mob-co-card">
+                <div className="mob-co-summary">
+                  <div className="mob-co-summary-row">
+                    <span>{tr('Items Subtotal')}</span>
+                    <strong>{formatPrice(cartSubtotal)}</strong>
+                  </div>
+                  <div className="mob-co-summary-row">
+                    <span>{tr('Delivery Fee')}</span>
+                    <strong>{formatPrice(deliveryFee)}</strong>
+                  </div>
+                  <div className={`mob-co-summary-row ${couponDiscount > 0 ? '' : 'is-muted'}`}>
+                    <span>{tr('Discount')}</span>
+                    <strong>{couponDiscount > 0 ? `−${formatPrice(couponDiscount)}` : formatPrice(0)}</strong>
+                  </div>
+                  <div className="mob-co-summary-total">
+                    <span>{tr('Total Amount')}</span>
+                    <strong>{formatPrice(cartTotal)}</strong>
+                  </div>
+                </div>
+              </section>
+
+              {/* 4. Payment method */}
+              <section className="mob-co-card">
+                <div className="mob-co-payments" role="radiogroup" aria-label={tr('Payment Method')}>
+                  {CHECKOUT_PAYMENT_KINDS.map((kind) => {
+                    const isSelected = activePaymentKind === kind.id
+                    return (
+                      <label key={kind.id} className={`mob-co-pay ${isSelected ? 'is-selected' : ''}`}>
+                        <input
+                          type="radio"
+                          name="checkoutPaymentKind"
+                          value={kind.id}
+                          checked={isSelected}
+                          onChange={() => choosePaymentKind(kind.id)}
+                        />
+                        <span className="mob-co-pay-icon" aria-hidden="true">{kind.svg}</span>
+                        <span className="mob-co-pay-copy">
+                          <strong>{tr(kind.titleKey)}</strong>
+                          <span>{tr(kind.subtitleKey)}</span>
+                        </span>
+                        <span className="mob-co-pay-radio" aria-hidden="true" />
+                      </label>
+                    )
+                  })}
                 </div>
 
-                {isCashPayment ? (
-                  <p style={{ fontSize: '0.82rem', color: 'var(--mob-ink-light)', margin: '0.5rem 0' }}>
-                    💵 {tr('Cash on Delivery: Please have the exact payment ready when your delivery arrives.')} {formatPrice(cartTotal)}
-                  </p>
-                ) : (
-                  <>
+                {/* Accounts (mobile wallets / bank accounts) configured for the selected method */}
+                {activePaymentKind === 'wallet' && paymentMethods.some((payment) => getPaymentKind(payment) === 'wallet') && (
+                  <div className="mob-co-account-list" role="radiogroup" aria-label={tr('Choose a mobile wallet')}>
+                    {kindAccounts.map((payment) => {
+                      const isSelected = selectedPaymentAccount?.id === payment.id
+                      return (
+                        <label key={payment.id} className={`mob-co-account ${isSelected ? 'is-selected' : ''}`}>
+                          <input
+                            type="radio"
+                            name="checkoutWalletAccount"
+                            value={payment.id}
+                            checked={isSelected}
+                            onChange={() => { setError(''); setPaymentSlip(''); setCheckoutForm({ ...checkoutForm, paymentAccountId: payment.id }) }}
+                          />
+                          <span className="mob-co-account-copy">
+                            <strong>{language === 'my' ? payment.nameMyanmar || payment.name : payment.name}</strong>
+                            <span>{[payment.accountName, payment.phoneNumber].filter(Boolean).join(' · ') || payment.name}</span>
+                          </span>
+                          <span className="mob-co-pay-radio" aria-hidden="true" />
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {activePaymentKind === 'bank' && selectedPaymentAccount && (
+                  <div className="mob-payment-detail-box">
                     {selectedPaymentAccount.accountName && (
                       <div className="mob-payment-detail-row">
                         <span>{tr('Account Name')}</span>
                         <strong>{selectedPaymentAccount.accountName}</strong>
                       </div>
                     )}
-                    {selectedPaymentAccount.type === 'bank' || selectedPaymentAccount.id === 'bank' ? (
-                      <>
-                        {selectedPaymentAccount.bankName && (
-                          <div className="mob-payment-detail-row">
-                            <span>{tr('Bank Name')}</span>
-                            <strong>{selectedPaymentAccount.bankName}</strong>
-                          </div>
-                        )}
-                        {selectedPaymentAccount.accountNumber && (
-                          <div className="mob-payment-detail-row">
-                            <span>{tr('Account Number')}</span>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                              <strong>{selectedPaymentAccount.accountNumber}</strong>
-                              <button className="mob-copy-btn" onClick={() => copyToClipboard(selectedPaymentAccount.accountNumber)}>
-                                {copiedText ? tr('Copied') : tr('Copy')}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      selectedPaymentAccount.phoneNumber && (
-                        <div className="mob-payment-detail-row">
-                          <span>{tr('Phone Number')}</span>
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <strong>{selectedPaymentAccount.phoneNumber}</strong>
-                            <button className="mob-copy-btn" onClick={() => copyToClipboard(selectedPaymentAccount.phoneNumber)}>
-                              {copiedText ? tr('Copied') : tr('Copy')}
-                            </button>
-                          </div>
-                        </div>
-                      )
+                    {selectedPaymentAccount.bankName && (
+                      <div className="mob-payment-detail-row">
+                        <span>{tr('Bank Name')}</span>
+                        <strong>{selectedPaymentAccount.bankName}</strong>
+                      </div>
                     )}
-
+                    {selectedPaymentAccount.accountNumber && (
+                      <div className="mob-payment-detail-row">
+                        <span>{tr('Account Number')}</span>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          <strong>{selectedPaymentAccount.accountNumber}</strong>
+                          <button className="mob-copy-btn" onClick={() => copyToClipboard(selectedPaymentAccount.accountNumber)}>
+                            {copiedText ? tr('Copied') : tr('Copy')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {selectedPaymentAccount.qrCode && (
                       <div className="mob-qr-preview">
                         <img src={selectedPaymentAccount.qrCode} alt={`${selectedPaymentAccount.name} QR Code`} />
                         <small style={{ fontSize: '0.72rem', color: 'var(--mob-muted)' }}>{tr('Scan QR code with your mobile banking app')}</small>
                       </div>
                     )}
-
-                    <div style={{ fontSize: '0.74rem', color: 'var(--mob-muted)', marginTop: '0.6rem', lineHeight: 1.4 }}>
-                      ⚠️ Transfer the exact amount <strong>{formatPrice(cartTotal)}</strong>, then upload the receipt screenshot in the next step.
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 4: Payment Slip */}
-        {checkoutStep === 4 && (
-          <div className="mob-checkout-card">
-            <h3>4. {tr('Payment Slip')}</h3>
-            <p className="mob-checkout-card-sub">{tr('Upload a screenshot or photo of your transfer receipt.')}</p>
-
-            {isCashPayment ? (
-              <div style={{ padding: '1rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)', textAlign: 'center' }}>
-                <span style={{ fontSize: '1.5rem' }}>💵</span>
-                <p style={{ fontSize: '0.86rem', fontWeight: 700, margin: '0.5rem 0 0.2rem' }}>{tr('No Slip Required')}</p>
-                <p style={{ fontSize: '0.76rem', color: 'var(--mob-muted)' }}>{tr('You chose Cash on Delivery. Simply continue to review your order.')}</p>
-              </div>
-            ) : (
-              <div className="mob-slip-box">
-                {paymentSlip ? (
-                  <>
-                    <div className="mob-slip-preview-wrap">
-                      <img src={paymentSlip} alt={tr('Payment slip')} />
-                    </div>
-                    <div className="mob-slip-actions">
-                      <label className="mob-slip-upload-label">
-                        <span>{tr('Replace Slip')}</span>
-                        <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
-                      </label>
-                      <button className="mob-btn-secondary" style={{ padding: '0.65rem 1rem' }} onClick={() => setPaymentSlip('')}>
-                        {tr('Remove')}
-                      </button>
-                    </div>
-                    <small style={{ fontSize: '0.72rem', color: 'var(--mob-success)', fontWeight: 700 }}>✓ {tr('Receipt attached successfully')}</small>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: '2rem', color: 'var(--mob-brand)' }}>📷</div>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 800 }}>{tr('Upload Payment Slip')}</div>
-                    <p style={{ fontSize: '0.76rem', color: 'var(--mob-muted)', margin: 0 }}>
-                      {tr('Take a photo or choose from gallery.')}<br />{tr('JPG, JPEG, PNG, or WebP (up to 5 MB)')}
-                    </p>
-                    <label className="mob-slip-upload-label">
-                      <span>{tr('Choose Image')}</span>
-                      <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
-                    </label>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 5: Review & Place Order */}
-        {checkoutStep === 5 && (
-          <div className="mob-checkout-card">
-            <h3>5. {tr('Review & Place Order')}</h3>
-            <p className="mob-checkout-card-sub">{tr('Verify your order details before final submission.')}</p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.82rem' }}>
-              <div style={{ padding: '0.65rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--mob-muted)', textTransform: 'uppercase' }}>{tr('Delivery Info')}</span>
-                <div><strong>{checkoutForm.name}</strong> · {checkoutForm.phone}</div>
-                <div style={{ color: 'var(--mob-ink-light)' }}>{checkoutForm.shippingAddress}</div>
-                <div style={{ marginTop: '0.2rem', color: 'var(--mob-brand)' }}>{tr(selectedDelivery?.label || '')}</div>
-              </div>
-
-              <div style={{ padding: '0.65rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--mob-muted)', textTransform: 'uppercase' }}>{tr('Payment Details')}</span>
-                <div><strong>{selectedPaymentAccount?.name}</strong></div>
-                {accountNumber && <div>{accountNumber} ({selectedPaymentAccount?.accountName})</div>}
-                <div>{tr('Amount')}: <strong>{formatPrice(cartTotal)}</strong></div>
-                {paymentSlip && (
-                  <div style={{ marginTop: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <img src={paymentSlip} alt={tr('Payment slip')} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
-                    <span style={{ color: 'var(--mob-success)', fontWeight: 700 }}>{tr('Payment slip uploaded')}</span>
                   </div>
                 )}
-              </div>
 
-              <div>
-                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--mob-muted)', textTransform: 'uppercase' }}>{tr('Items')} ({cart.filter((item) => item.selected !== false).length})</span>
-                {cart.filter((item) => item.selected !== false).map((item) => {
-                  const product = products.find((candidate) => String(candidate.id) === String(item.id))
-                  const price = Number(product?.discountPrice ?? product?.price ?? item.price)
-                  return (
-                    <div key={item.cartKey || item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid var(--mob-line-light)' }}>
-                      <span>{item.name} × {item.quantity}</span>
-                      <strong>{formatPrice(price * item.quantity)}</strong>
+                {isCashPayment ? (
+                  <p className="mob-co-pay-note">{tr('No payment slip needed. Pay the delivery person when your order arrives.')}</p>
+                ) : (
+                  <div className="mob-co-final-group">
+                    <div className="mob-co-final-group-head"><span>{tr('Payment Slip')}</span></div>
+                    <div className="mob-slip-box">
+                      {paymentSlip ? (
+                        <>
+                          <div className="mob-slip-preview-wrap"><img src={paymentSlip} alt={tr('Payment slip')} /></div>
+                          <div className="mob-slip-actions">
+                            <label className="mob-slip-upload-label">
+                              <span>{tr('Replace Slip')}</span>
+                              <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
+                            </label>
+                            <button type="button" className="mob-btn-secondary" style={{ padding: '0.65rem 1rem' }} onClick={() => setPaymentSlip('')}>{tr('Remove')}</button>
+                          </div>
+                        </>
+                      ) : (
+                        <label className="mob-slip-upload-label">
+                          <span>{tr('Upload Payment Slip')}</span>
+                          <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
+                        </label>
+                      )}
                     </div>
-                  )
-                })}
-              </div>
-
-              <div style={{ paddingTop: '0.5rem' }}>
-                <div className="mob-summary-row"><span>{tr('Subtotal')}</span><strong>{formatPrice(cartSubtotal)}</strong></div>
-                <div className="mob-summary-row"><span>{tr('Delivery Fee')}</span><strong>{formatPrice(deliveryFee)}</strong></div>
-                {couponDiscount > 0 && <div className="mob-summary-row discount"><span>{tr('Discount')}</span><strong>−{formatPrice(couponDiscount)}</strong></div>}
-                <div className="mob-summary-divider" />
-                <div className="mob-summary-row mob-summary-total"><span>{tr('Total to Pay')}</span><strong>{formatPrice(cartTotal)}</strong></div>
-              </div>
+                  </div>
+                )}
+              </section>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Error message */}
         {error && (
@@ -1089,37 +1162,50 @@ export default function MobileApp({
           </div>
         )}
 
-        {/* Bottom Actions for Checkout */}
-        <div className="mob-checkout-nav-bar">
-          <button
-            className="mob-btn-secondary"
-            disabled={checkoutStep === 1}
-            onClick={() => { setError(''); setCheckoutStep((s) => Math.max(1, s - 1)) }}
-          >
-            {tr('Previous')}
-          </button>
-          {checkoutStep < 5 ? (
+        {/* Bottom bar: storefront wizard navigation, or one-tap place order from the review screen */}
+        {checkoutIsReview || checkoutIsFinal ? (
+          <div className="mob-co-bar">
+            <div className="mob-co-bar-total">
+              <span>{tr('Total Amount')}</span>
+              <strong>{formatPrice(cartTotal)}</strong>
+            </div>
+            <button
+              type="button"
+              className="mob-co-place"
+              disabled={isSubmittingOrder || !cart.length || !selectedPaymentAccount || (!isCashPayment && !paymentSlip)}
+              onClick={() => { void handleMobilePlaceOrder('review') }}
+            >
+              {isSubmittingOrder ? tr('Placing Order...') : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>
+                  {tr('Place Order')}
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="mob-checkout-nav-bar">
+            <button
+              className="mob-btn-secondary"
+              disabled={checkoutStep === 1}
+              onClick={() => { setError(''); setCheckoutStep((s) => Math.max(1, s - 1)) }}
+            >
+              {tr('Previous')}
+            </button>
             <button
               className="mob-btn-primary"
               onClick={() => {
-                const msg = validateMobileStep(checkoutStep)
+                const msg = validateCheckoutStep(checkoutStep)
                 if (msg) { setError(tr(msg)); return }
                 setError('')
+                if (checkoutStep === 5) { setCheckoutStep('review'); return }
                 setCheckoutStep((s) => Math.min(5, s + 1))
               }}
             >
-              {tr('Continue')}
+              {checkoutStep >= 5 ? tr('Review order') : tr('Continue')}
             </button>
-          ) : (
-            <button
-              className="mob-btn-primary"
-              disabled={isSubmittingOrder || !cart.length || !selectedPaymentAccount || (!isCashPayment && !paymentSlip)}
-              onClick={handleMobilePlaceOrder}
-            >
-              {isSubmittingOrder ? tr('Placing Order...') : `${tr('Place Order')} · ${formatPrice(cartTotal)}`}
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </main>
     )
   }
@@ -1139,7 +1225,7 @@ export default function MobileApp({
         <header className="mob-header">
           <div className="mob-header-inner">
             <button className="mob-logo" aria-label={tr('HTOO Home')} onClick={() => { setActiveTab('home'); setSelectedMobileCategory('All'); setSearchQuery('') }}>
-              <img className="mob-logo-image" src="/logo.svg" alt="" aria-hidden="true" />
+              <img className="mob-logo-image" src={HEADER_LOGO_URL} alt="" aria-hidden="true" />
             </button>
 
             <div className="mob-header-search">
@@ -1179,36 +1265,38 @@ export default function MobileApp({
 
       {/* Category shortcuts belong to Search, not the customer home page. */}
       {currentTab === 'explore' && (
-        <div className="mob-categories-scroll">
-          {[
-            ['All', '✦'],
-            ['Men', '◉'],
-            ['Women', '♡'],
-            ['Kids', '☆'],
-            ['Shoes', '⌁'],
-            ['Bags', '▱'],
-            ['Accessories', '◇'],
-            ['New Collection', '✧'],
-            ['Sale', '%']
-          ].map(([cat, icon]) => {
-            const isActive = selectedMobileCategory === cat
-            return (
-              <button
-                key={cat}
-                className={`mob-category-shortcut ${isActive ? 'active' : ''}`}
-                aria-pressed={isActive}
-                onClick={() => {
-                  setSelectedMobileCategory(cat)
-                  if (currentTab === 'home') setActiveTab('search')
-                  setSelectedCategory?.(cat === 'All' || cat === 'Sale' ? '' : cat)
-                }}
-              >
-                <span className="mob-category-icon" aria-hidden="true">{icon}</span>
-                <span>{tr(cat)}</span>
-              </button>
-            )
-          })}
-        </div>
+        <>
+          <div className="mob-categories-scroll">
+            {[
+              ['All', '✦'],
+              ['Men', '◉'],
+              ['Women', '♡'],
+              ['Kids', '☆'],
+              ['Shoes', '⌁'],
+              ['Bags', '▱'],
+              ['Accessories', '◇'],
+              ['New Collection', '✧'],
+              ['Sale', '%']
+            ].map(([cat, icon]) => {
+              const isActive = selectedMobileCategory === cat
+              return (
+                <button
+                  key={cat}
+                  className={`mob-category-shortcut ${isActive ? 'active' : ''}`}
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    setSelectedMobileCategory(cat)
+                    if (currentTab === 'home') setActiveTab('search')
+                    setSelectedCategory?.(cat === 'All' || cat === 'Sale' ? '' : cat)
+                  }}
+                >
+                  <span className="mob-category-icon" aria-hidden="true">{icon}</span>
+                  <span>{tr(cat)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {/* --------------------------------------------------------------------
@@ -1285,56 +1373,6 @@ export default function MobileApp({
       {/* FILTERED OR SEARCH RESULTS (On Home or Explore) */}
       {(searchQuery.trim() || selectedMobileCategory !== 'All' || currentTab === 'explore') && currentTab !== 'wishlist' && currentTab !== 'cart' && currentTab !== 'account' && (
         <section className="mob-section">
-          {currentTab === 'explore' && !searchQuery.trim() && selectedMobileCategory === 'All' && (
-            <div className="mob-search-discovery">
-              <strong>{tr('Popular searches')}</strong>
-              <div className="mob-search-discovery-chips">
-                {['New Collection', 'Shoes', 'Bags', 'Sale'].map((term) => (
-                  <button key={term} className="mob-chip" onClick={() => {
-                    if (['New Collection', 'Sale'].includes(term)) setSelectedMobileCategory(term)
-                    else setSearchQuery(term === 'Bags' ? 'bag' : term.slice(0, -1))
-                  }}>{tr(term)}</button>
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Recent Searches */}
-          {recentSearches && recentSearches.length > 0 && (
-            <div className="mob-recent-searches">
-              <div className="mob-recent-searches-head">
-                <small>{tr('Recent searches')}</small>
-                <button onClick={() => setRecentSearches?.([])}>{tr('Clear')}</button>
-              </div>
-              <div className="mob-search-discovery-chips">
-                {recentSearches.map((term) => (
-                  <button key={term} className="mob-chip" onClick={() => setSearchQuery(term)}>{term}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Subcategories */}
-          {selectedMobileCategory !== 'All' && selectedMobileCategory !== 'Sale' && CATEGORY_TREE?.[selectedMobileCategory] && (
-            <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', marginBottom: '0.75rem', scrollbarWidth: 'none' }}>
-              {CATEGORY_TREE[selectedMobileCategory].map((sub) => (
-                <span key={sub} style={{ fontSize: '0.74rem', padding: '0.22rem 0.65rem', background: '#fff', border: '1px solid var(--mob-line)', borderRadius: '999px', whiteSpace: 'nowrap', color: 'var(--mob-ink-light)' }}>
-                  {sub}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Sort & Filter Controls on Explore */}
-          {currentTab === 'explore' && (
-            <div className="mob-search-tools">
-              <button className="mob-chip" onClick={() => setSearchSheet('filter')}>{tr('Filter')} · {tr(selectedMobileCategory)}</button>
-              <button className="mob-chip" onClick={() => setSearchSheet('sort')}>{tr('Sort')}</button>
-              {(filters?.brand || filters?.price || sortBy !== 'popular') && (
-                <button className="mob-chip" onClick={() => { setFilters({ ...filters, brand: '', price: '' }); setSortBy('popular') }}>{tr('Clear')}</button>
-              )}
-            </div>
-          )}
-
           <div className="mob-section-head">
             <h3 className="mob-section-title">
               {searchQuery ? `${tr('Search Results')} (${mobileDisplayProducts.length})` : `${tr(selectedMobileCategory)} (${mobileDisplayProducts.length})`}
@@ -1432,7 +1470,7 @@ export default function MobileApp({
                         onClick={() => setViewingProduct(product)}
                         title={tr('View details')}
                       >
-                        ↗
+                        ←
                       </button>
                     </div>
                   </div>
@@ -1459,39 +1497,14 @@ export default function MobileApp({
         <section className="mob-cart-screen">
           <div className="mob-cart-heading">
             <h3 className="mob-section-title">{tr('Shopping Cart')} ({cartCount})</h3>
-            {cart.length > 0 && <p>{tr('Review your selected pieces before checkout.')}</p>}
           </div>
 
           {cart.length > 0 ? (
             <>
-              <label className="mob-cart-select-all">
-                <input
-                  type="checkbox"
-                  className="mob-cart-checkbox"
-                  checked={cart.every((item) => item.selected !== false)}
-                  onChange={(event) => {
-                    const selected = event.target.checked
-                    cart.forEach((item) => updateCartItem(item.cartKey || item.id, { selected }))
-                  }}
-                />
-                <span>{tr('Select all')}</span>
-                <span className="mob-cart-selected-count">{cart.filter((item) => item.selected !== false).length} {tr('selected')}</span>
-              </label>
               {/* Cart Items List */}
               <div className="mob-cart-list">
                 {cart.map((item) => (
-                  <article key={item.cartKey || item.id} className="mob-cart-card" data-selected={item.selected !== false}>
-                    <input
-                      className="mob-cart-checkbox"
-                      type="checkbox"
-                      aria-label={`${tr('Select')} ${item.name}`}
-                      checked={item.selected !== false}
-                      onChange={() => {
-                        const key = item.cartKey || item.id
-                        const selected = item.selected === false
-                        updateCartItem(key, { selected })
-                      }}
-                    />
+                  <article key={item.cartKey || item.id} className="mob-cart-card">
                     <img
                       className="mob-cart-thumb"
                       src={products.find((product) => String(product.id) === String(item.id))?.image || item.image}
@@ -1529,17 +1542,13 @@ export default function MobileApp({
                         const stock = getProductStock(product || {}, item.variants)
                         return (
                           <>
-                            <div className="mob-cart-pricing">
-                              <span className="mob-cart-price">{formatPrice(price)}</span>
-                              <strong>{formatPrice(price * item.quantity)}</strong>
-                            </div>
                             <div className="mob-cart-controls-row">
                               <div className="mob-cart-stepper" aria-label={`${tr('Quantity')}: ${item.quantity}`}>
                                 <button type="button" aria-label={`${tr('Decrease quantity')} ${item.name}`} disabled={item.quantity <= 1} onClick={() => updateQuantity(item.cartKey || item.id, -1)}>−</button>
                                 <span aria-live="polite">{item.quantity}</span>
                                 <button type="button" className="mob-cart-stepper-plus" aria-label={`${tr('Increase quantity')} ${item.name}`} disabled={item.quantity >= stock} onClick={() => updateQuantity(item.cartKey || item.id, 1)}>+</button>
                               </div>
-                              <button className="mob-save-later" type="button" onClick={() => saveCartItemForLater(item)}>{tr('Save for later')}</button>
+                              <strong className="mob-cart-line-total">{formatPrice(price * item.quantity)}</strong>
                             </div>
                           </>
                         )
@@ -1548,23 +1557,6 @@ export default function MobileApp({
                   </article>
                 ))}
               </div>
-
-              {savedForLater.length > 0 && (
-                <div className="mob-saved-later">
-                  <h4>{tr('Saved for later')} ({savedForLater.length})</h4>
-                  {savedForLater.map((item) => (
-                    <div className="mob-saved-later-row" key={item.cartKey || item.id}>
-                      <span>{item.name} · {formatPrice(item.price)}</span>
-                      <button className="mob-section-see-all" onClick={() => {
-                        const product = products.find((candidate) => String(candidate.id) === String(item.id))
-                        if (!product) { showToast(tr('This product is no longer available.')); return }
-                        handleAddToCart({ ...product, selectedVariants: item.variants }, item.variants, item.quantity)
-                        setSavedForLater((current) => current.filter((saved) => (saved.cartKey || saved.id) !== (item.cartKey || item.id)))
-                      }}>{tr('Move to Cart')}</button>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               {/* Coupon Row */}
               <div className="mob-coupon-card">
@@ -1592,36 +1584,26 @@ export default function MobileApp({
                 </div>
               )}
 
-              {/* Order Summary Card */}
-              <div className="mob-order-summary-card">
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>{tr('Order Summary')}</h4>
-                <div className="mob-summary-row"><span>{tr('Subtotal')}</span><strong>{formatPrice(cartSubtotal)}</strong></div>
-                <div className="mob-summary-row"><span>{tr('Delivery Fee')}</span><strong>{formatPrice(deliveryFee)}</strong></div>
-                {couponDiscount > 0 && (
-                  <div className="mob-summary-row discount"><span>{tr('Discount')}</span><strong>−{formatPrice(couponDiscount)}</strong></div>
-                )}
-                <div className="mob-summary-divider" />
-                <div className="mob-summary-row mob-summary-total"><span>{tr('Total')}</span><strong>{formatPrice(cartTotal)}</strong></div>
-              </div>
-
-              {/* Sticky Bottom Bar */}
-              <div className="mob-sticky-checkout-bar">
-                <div className="mob-checkout-total-col">
-                  <small>{tr('Total Price')}</small>
-                  <strong>{formatPrice(cartTotal)}</strong>
-                </div>
-                <button className="mob-btn-checkout" disabled={!cart.some((item) => item.selected !== false)} onClick={() => {
-                  if (!cart.some((item) => item.selected !== false)) { showToast(tr('Select at least one item to continue.')); return }
-                  beginCheckout()
-                }}>
-                  <span>{tr('Proceed to Checkout')}</span>
-                  <span>→</span>
+              {/* Sticky checkout footer bar, sitting just above the bottom nav */}
+              <div className="mob-cart-checkout-footer">
+                <button
+                  className="mob-btn-checkout"
+                  type="button"
+                  disabled={!cart.some((item) => item.selected !== false)}
+                  onClick={() => beginCheckout('review')}
+                >
+                  <span className="mob-btn-checkout-label">{tr('Go to Checkout')}</span>
+                  <span className="mob-btn-checkout-arrow" aria-hidden="true">→</span>
                 </button>
+                <div className="mob-cart-checkout-total">
+                  <span className="mob-cart-checkout-total-label">{tr('Grand Total')}</span>
+                  <strong className="mob-cart-checkout-total-value">{formatPrice(cartTotal)}</strong>
+                </div>
               </div>
             </>
           ) : (
             <div className="mob-empty-state">
-              <div className="mob-empty-icon">🛍️</div>
+              <div className="mob-empty-icon">🔍</div>
               <h4 className="mob-empty-title">{tr('Your cart is empty')}</h4>
               <p className="mob-empty-desc">{tr('Looks like you haven’t added anything to your cart yet.')}</p>
               <button className="mob-btn-primary" onClick={() => { setActiveTab('home'); setSelectedMobileCategory('All') }}>
@@ -1637,121 +1619,139 @@ export default function MobileApp({
          -------------------------------------------------------------------- */}
       {currentTab === 'account' && (
         <section className="mob-account-screen">
-          {/* User Profile Card */}
-          <div className="mob-profile-card">
+          {/* Profile Header: name (with edit icon), email, phone */}
+          <div className={user ? 'mob-profile-header' : 'mob-profile-header guest'}>
             <div className="mob-avatar-large">
               {user?.profileImage ? <img src={user.profileImage} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : user?.name ? user.name.charAt(0).toUpperCase() : 'G'}
             </div>
             <div className="mob-profile-info">
-              <div className="mob-profile-name">{user?.name || tr('Guest Shopper')}</div>
-              <div className="mob-profile-phone">{user?.email || user?.phone || tr('Not signed in')}</div>
-              {user?.phone && user?.email && <div className="mob-profile-phone">{user.phone}</div>}
-              {user?.email && <div className="mob-profile-phone">{tr(user.emailVerified ? 'Email verified' : 'Email not verified')}</div>}
-              <span className="mob-profile-tier">{tr(user ? 'VIP Member' : 'Guest Account')}</span>
-              {user && <button className="mob-section-see-all" onClick={() => setActiveAccountModal('profile')}>{tr('Edit profile')}</button>}
+              <div className="mob-profile-name-row">
+                <h2 className="mob-profile-name">{user?.name || tr('Guest Shopper')}</h2>
+                {user && (
+                  <button
+                    type="button"
+                    className="mob-profile-edit-btn"
+                    onClick={() => setActiveAccountModal('profile')}
+                    aria-label={tr('Edit profile')}
+                    title={tr('Edit profile')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <div className="mob-profile-contact">
+                <span className="mob-profile-contact-line">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" /></svg>
+                  {user?.email || tr('No email added')}
+                </span>
+                <span className="mob-profile-contact-line">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.68 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.2a2 2 0 0 1 2.11-.45c.9.32 1.85.55 2.81.68A2 2 0 0 1 22 16.92Z" /></svg>
+                  {user?.phone || tr('No phone number added')}
+                </span>
+              </div>
             </div>
           </div>
           {accountLinkNotice && <p className="account-link-status" role="status">{tr(accountLinkNotice)}</p>}
 
-          {/* Account Menu Groups */}
+          {/* Account Menu List */}
           <div className="mob-menu-group">
-            {user && <button className="mob-menu-item" onClick={logout}>
-              <div className="mob-menu-item-left">
-                <div className="mob-menu-icon">↪</div>
-                <span className="mob-menu-label">{tr('Log out')}</span>
-              </div>
-              <div className="mob-menu-item-right"><span>›</span></div>
-            </button>}
-            <button className="mob-menu-item" onClick={() => setActiveAccountModal('orders')}>
+            <button className="mob-menu-item" onClick={() => { setOrderStatusFilter('To Receive'); setActiveAccountModal('orders') }}>
               <div className="mob-menu-item-left">
                 <div className="mob-menu-icon">📦</div>
                 <span className="mob-menu-label">{tr('My Orders')}</span>
               </div>
               <div className="mob-menu-item-right">
                 <span>{orders.length} {tr('orders')}</span>
-                <span>›</span>
+                <span aria-hidden="true">›</span>
               </div>
             </button>
 
-            <button className="mob-menu-item" onClick={() => setActiveAccountModal('addresses')}>
+            <button className="mob-menu-item" onClick={openAddressList}>
               <div className="mob-menu-item-left">
-                <div className="mob-menu-icon">📍</div>
-                <span className="mob-menu-label">{tr('My Addresses')}</span>
+                <div className="mob-menu-icon">📒</div>
+                <span className="mob-menu-label">{tr('Address Book')}</span>
               </div>
               <div className="mob-menu-item-right">
                 <span>{addressBook.length} {tr('saved')}</span>
-                <span>›</span>
+                <span aria-hidden="true">›</span>
               </div>
             </button>
 
-            <button className="mob-menu-item" onClick={() => setActiveTab('wishlist')}>
-              <div className="mob-menu-item-left">
-                <div className="mob-menu-icon">❤️</div>
-                <span className="mob-menu-label">{tr('Wishlist')}</span>
-              </div>
-              <div className="mob-menu-item-right">
-                <span>{wishlist.length} {tr('items')}</span>
-                <span>›</span>
-              </div>
-            </button>
-
-          </div>
-
-          <div className="mob-menu-group">
-            <button className="mob-menu-item" onClick={() => setNotificationsOpen(true)} aria-label={`${tr('Notifications')} (${unreadNotifications})`}>
-              <div className="mob-menu-item-left">
-                <div className="mob-menu-icon">🔔</div>
-                <span className="mob-menu-label">{tr('Notifications & Deals')}</span>
-              </div>
-              <div className="mob-menu-item-right">
-                <span>›</span>
-              </div>
-            </button>
-
-            <button className="mob-menu-item" onClick={() => setActiveAccountModal('settings')}>
-              <div className="mob-menu-item-left">
-                <div className="mob-menu-icon">⚙️</div>
-                <span className="mob-menu-label">{tr('Settings')}</span>
-              </div>
-              <div className="mob-menu-item-right">
-                <span>›</span>
-              </div>
-            </button>
-
-            <button className="mob-menu-item" onClick={() => setActiveAccountModal('help')}>
+            <button
+              className="mob-menu-item"
+              onClick={() => {
+                setActiveAccountModal('help')
+                // Always show the channels the admin has configured right now.
+                loadSupportChannels?.()
+              }}
+            >
               <div className="mob-menu-item-left">
                 <div className="mob-menu-icon">💬</div>
-                <span className="mob-menu-label">{tr('Help & Support')}</span>
+                <span className="mob-menu-label">{language === 'my' ? 'အကူအညီ' : tr('Help')}</span>
               </div>
               <div className="mob-menu-item-right">
-                <span>›</span>
+                <span aria-hidden="true">›</span>
               </div>
             </button>
-          </div>
 
-          <div className="mob-menu-group">
+            <button className="mob-menu-item" onClick={() => setActiveAccountModal('language')}>
+              <div className="mob-menu-item-left">
+                <div className="mob-menu-icon">🌐</div>
+                <span className="mob-menu-label">{tr('Language')}</span>
+              </div>
+              <div className="mob-menu-item-right">
+                <span>{language === 'my' ? tr('Myanmar') : tr('English')}</span>
+                <span aria-hidden="true">›</span>
+              </div>
+            </button>
+
             {user || guestMode ? (
               <button className="mob-menu-item logout" onClick={logout}>
                 <div className="mob-menu-item-left">
-                  <div className="mob-menu-icon">🚪</div>
-                  <span className="mob-menu-label">{tr('Log Out')}</span>
+                  <div className="mob-menu-icon">↪</div>
+                  <span className="mob-menu-label">{language === 'my' ? 'ထွက်ရန်' : tr('Log Out')}</span>
                 </div>
                 <div className="mob-menu-item-right">
-                  <span>›</span>
+                  <span aria-hidden="true">›</span>
                 </div>
               </button>
             ) : (
               <button className="mob-menu-item" onClick={() => setRoute({ page: 'auth' })}>
                 <div className="mob-menu-item-left">
                   <div className="mob-menu-icon">🔑</div>
-                  <span className="mob-menu-label" style={{ color: 'var(--mob-brand)' }}>{tr('Sign In / Register')}</span>
+                  <span className="mob-menu-label" style={{ color: 'var(--mob-brand)' }}>{language === 'my' ? 'အကောင့်ဝင်ရန် / အကောင့်ဖွင့်ရန်' : tr('Sign In / Register')}</span>
                 </div>
                 <div className="mob-menu-item-right">
-                  <span>›</span>
+                  <span aria-hidden="true">›</span>
+                </div>
+              </button>
+            )}
+
+            {user && (
+              <button className="mob-menu-item danger" onClick={() => { setError(''); setDeleteConfirmationText(''); setDeleteConfirmationOpen(true) }}>
+                <div className="mob-menu-item-left">
+                  <div className="mob-menu-icon">🗑️</div>
+                  <span className="mob-menu-label">{language === 'my' ? 'အကောင့်ဖျက်ရန်' : tr('Delete Account')}</span>
+                </div>
+                <div className="mob-menu-item-right">
+                  <span aria-hidden="true">›</span>
                 </div>
               </button>
             )}
           </div>
+
+          {/* Account Settings & Support Links */}
+          {user && (
+            <div className="mob-account-links">
+              <button className="mob-account-link" onClick={() => setActiveAccountModal('settings')}>
+                <span>{tr('Account Settings')}</span>
+                <span className="mob-account-link-arrow" aria-hidden="true">›</span>
+              </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -1801,18 +1801,6 @@ export default function MobileApp({
           <span className="mob-nav-label">{tr('Wishlist')}</span>
         </button>
 
-        {/* Cart */}
-        <button
-          className={`mob-nav-item ${currentTab === 'cart' ? 'active' : ''}`}
-          onClick={() => setActiveTab('cart')}
-          aria-label={`${tr('Open cart')}${cartCount ? `, ${cartCount} ${tr('items')}` : ''}`}
-        >
-          <div className="mob-nav-icon-wrap">
-            <CartIcon count={cartCount} />
-          </div>
-          <span className="mob-nav-label">{tr('Cart')}</span>
-        </button>
-
         {/* Account */}
         <button
           className={`mob-nav-item ${currentTab === 'account' ? 'active' : ''}`}
@@ -1824,7 +1812,7 @@ export default function MobileApp({
               <circle cx="12" cy="7" r="4" />
             </svg>
           </div>
-          <span className="mob-nav-label">{tr('Profile')}</span>
+          <span className="mob-nav-label">{tr('Account')}</span>
         </button>
       </nav>
 
@@ -1859,7 +1847,7 @@ export default function MobileApp({
           <div className="mob-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="mob-sheet-head">
               <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>{tr('Store Notifications')}</h3>
-              <button className="mob-icon-btn" onClick={() => setNotificationsOpen(false)} aria-label={tr('Close')}>✕</button>
+              <button className="mob-icon-btn" onClick={() => setNotificationsOpen(false)} aria-label={tr('Close')}>✢</button>
             </div>
             <div className="mob-sheet-scroll" style={{ paddingBottom: '20px' }}>
               {notifications.length > 0 && (
@@ -1890,35 +1878,71 @@ export default function MobileApp({
          -------------------------------------------------------------------- */}
       {activeAccountModal && (
         <div className="mob-sheet-overlay" onClick={() => setActiveAccountModal(null)}>
-          <div className="mob-sheet" onClick={(e) => e.stopPropagation()}>
+          <div className={`mob-sheet ${activeAccountModal === 'orders' || (activeAccountModal === 'addresses' && addressScreen === 'form') ? 'mob-sheet--orders' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="mob-sheet-head">
+              {activeAccountModal === 'orders' || activeAccountModal === 'addresses' || activeAccountModal === 'help' ? (
+                <button
+                  className="mob-icon-btn"
+                  onClick={() => {
+                    if (activeAccountModal === 'addresses' && addressScreen === 'form') {
+                      setAddressScreen('list')
+                      setEditingAddressId('')
+                      resetAddressForm()
+                      return
+                    }
+                    setActiveAccountModal(null)
+                  }}
+                  aria-label={tr('Back')}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                </button>
+              ) : null}
               <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>
                 {activeAccountModal === 'orders' && tr('My Orders')}
-                {activeAccountModal === 'addresses' && tr('Saved Delivery Addresses')}
+                {activeAccountModal === 'addresses' && (addressScreen === 'form'
+                  ? (editingAddressId ? tr('Edit Address') : tr('Add New Address'))
+                  : tr('Address Book'))}
                 {activeAccountModal === 'notifications' && tr('Notifications')}
                 {activeAccountModal === 'settings' && tr('App Settings')}
+                {activeAccountModal === 'language' && tr('Languages')}
                 {activeAccountModal === 'help' && tr('Help & Customer Support')}
                 {activeAccountModal === 'chat' && `Order #${selectedOrder?.orderNumber || selectedOrder?.id}`}
                 {activeAccountModal === 'profile' && tr('Edit profile')}
               </h3>
-              <button className="mob-icon-btn" onClick={() => setActiveAccountModal(null)} aria-label={tr('Close')}>✕</button>
+              <button className="mob-icon-btn" onClick={() => setActiveAccountModal(null)} aria-label={tr('Close')}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
             </div>
 
-            <div className="mob-sheet-scroll" style={{ paddingBottom: '30px' }}>
-              {/* ORDERS MODAL */}
-              {activeAccountModal === 'orders' && (
-                <div>
-                  {orders.length > 0 && (
-                    <div className="mob-order-status-tabs">
-                      {orderStatusFilters.map((status) => (
-                        <button className={`mob-chip ${orderStatusFilter === status ? 'active' : ''}`} key={status} onClick={() => setOrderStatusFilter(status)}>{tr(status)}</button>
-                      ))}
-                    </div>
-                  )}
+            {activeAccountModal === 'orders' && (
+              <div className="mob-order-tabs" role="tablist" aria-label={tr('My Orders')}>
+                {orderStatusFilters.map((status) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={orderStatusFilter === status}
+                    className={`mob-order-tab ${orderStatusFilter === status ? 'active' : ''}`}
+                    key={status}
+                    onClick={() => setOrderStatusFilter(status)}
+                  >
+                    {tr(status)}
+                  </button>
+                ))}
+              </div>
+            )}
 
+            <div className="mob-sheet-scroll" style={{ paddingBottom: '30px' }}>
+              {/* MY ORDERS SCREEN */}
+              {activeAccountModal === 'orders' && (
+                <div className="mob-orders-body">
                   {orders.filter((order) => matchesOrderStatus(order, orderStatusFilter)).length ? (
                     orders.filter((order) => matchesOrderStatus(order, orderStatusFilter)).map((ord) => (
-                      <div key={ord.id} className="mob-order-card">
+                      <button
+                        key={ord.id}
+                        type="button"
+                        className="mob-order-card mob-order-card--tappable"
+                        onClick={() => openOrderDetail(ord)}
+                      >
                         <div className="mob-order-header">
                           <span className="mob-order-number">#{ord.orderNumber || ord.id}</span>
                           <span className={`mob-status-pill mob-status-${(ord.status || 'new').toLowerCase()}`}>
@@ -1930,20 +1954,14 @@ export default function MobileApp({
                         </div>
                         <div className="mob-order-footer">
                           <strong style={{ fontSize: '0.9rem', color: 'var(--mob-brand-dark)' }}>{formatPrice(ord.total)}</strong>
-                          <button
-                            className="mob-btn-secondary"
-                            style={{ padding: '0.35rem 0.8rem', fontSize: '0.75rem' }}
-                            onClick={() => loadOrderChat(ord)}
-                          >
-                            {tr('Details & Chat 💬')}
-                          </button>
+                          <span className="mob-order-card-chevron" aria-hidden="true">›</span>
                         </div>
-                      </div>
+                      </button>
                     ))
                   ) : (
                     <div className="mob-empty-state">
                       <div className="mob-empty-icon">📦</div>
-                      <h4 className="mob-empty-title">{tr('No orders yet')}</h4>
+                      <h4 className="mob-empty-title">{tr(orderStatusFilter === 'Received' ? 'No received orders yet' : orderStatusFilter === 'Cancellations' ? 'No cancelled orders' : 'No orders to receive')}</h4>
                       <p className="mob-empty-desc">{tr('Your placed orders will show up here with live status updates.')}</p>
                     </div>
                   )}
@@ -1962,72 +1980,183 @@ export default function MobileApp({
                 </form>
               )}
 
-              {/* ADDRESSES MODAL */}
-              {activeAccountModal === 'addresses' && (
-                <div>
-                  <form onSubmit={handleAddNewAddress} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem', padding: '0.85rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)' }}>
-                    <strong style={{ fontSize: '0.85rem' }}>{editingAddressId ? tr('Edit') : `+ ${tr('Add New Address')}`}</strong>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <select
-                        style={{ padding: '0.45rem', fontSize: '0.8rem', borderRadius: 'var(--mob-radius-md)', border: '1px solid var(--mob-line)', background: '#fff' }}
-                        value={newAddressLabel}
-                        onChange={(e) => setNewAddressLabel(e.target.value)}
-                      >
-                        <option value="Home">{tr('Home address')}</option>
-                        <option value="Office">{tr('Office')}</option>
-                        <option value="Other">{tr('Other')}</option>
-                      </select>
-                      <input
-                        style={{ flex: 1, padding: '0.45rem 0.75rem', fontSize: '0.8rem', borderRadius: 'var(--mob-radius-md)', border: '1px solid var(--mob-line)', background: '#fff' }}
-                        placeholder={tr('Street, township, city')}
-                        value={newAddressInput}
-                        onChange={(e) => setNewAddressInput(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <button className="mob-btn-primary" style={{ padding: '0.5rem', fontSize: '0.8rem' }} type="submit">
-                      {editingAddressId ? tr('Save changes') : tr('Save Address')}
-                    </button>
-                  </form>
-
+              {/* ADDRESS BOOK (LIST) */}
+              {activeAccountModal === 'addresses' && addressScreen === 'list' && (
+                <div className="mob-address-book">
                   {addressBook.length ? (
-                    addressBook.map((addr) => (
-                      <div key={addr.id} style={{ padding: '0.85rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)', marginBottom: '0.65rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                          <strong>{addr.label}</strong>
-                          {addr.default ? (
-                            <span style={{ fontSize: '0.7rem', color: 'var(--mob-success)', fontWeight: 700 }}>{tr('Default')}</span>
-                          ) : (
-                            <button
-                              style={{ background: 'none', border: 'none', color: 'var(--mob-brand)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
-                              onClick={() => updateAddress(addr.id, { default: true })}
-                            >
-                              {tr('Set as Default')}
-                            </button>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--mob-ink-light)' }}>{addr.value}</div>
-                        <div className="mob-address-actions">
-                          <button type="button" className="mob-section-see-all" onClick={() => {
-                            setEditingAddressId(addr.id)
-                            setNewAddressLabel(addr.label || 'Home')
-                            setNewAddressInput(addr.value || '')
-                          }}>{tr('Edit')}</button>
-                          <button type="button" className="mob-section-see-all mob-danger-link" onClick={() => {
-                            if (window.confirm(tr('Delete this saved address?'))) removeAddress(addr.id)
-                          }}>{tr('Delete')}</button>
-                        </div>
-                      </div>
-                    ))
+                    <div className="mob-address-list">
+                      {addressBook.map((addr) => {
+                        const regionLabel = addr.region ? (language === 'my' ? MYANMAR_REGIONS_MY[addr.region] || addr.region : addr.region) : ''
+                        const townshipLabel = addr.township ? (language === 'my' ? MYANMAR_TOWNSHIP_MY[addr.township] || addr.township : addr.township) : ''
+                        return (
+                          <article key={addr.id} className={`mob-address-card ${addr.default ? 'is-default' : ''}`}>
+                            <div className="mob-address-card-head">
+                              <strong>{addr.fullName || addr.label}</strong>
+                              {addr.default && <span className="mob-address-default-badge">{tr('Default')}</span>}
+                            </div>
+                            {addr.phone && <div className="mob-address-card-phone">{addr.phone}</div>}
+                            <p className="mob-address-card-value">{addr.value}</p>
+                            {regionLabel && <div className="mob-address-card-meta">{[townshipLabel, regionLabel].filter(Boolean).join(', ')}</div>}
+                            {addr.mapLocation && <div className="mob-address-card-meta">📍 {addr.mapLocation}</div>}
+                            <div className="mob-address-actions">
+                              <button type="button" className="mob-section-see-all" onClick={() => openAddressForm(addr)}>{tr('Edit')}</button>
+                              {!addr.default && (
+                                <button type="button" className="mob-section-see-all" onClick={() => updateAddress(addr.id, { default: true })}>{tr('Set as Default')}</button>
+                              )}
+                              <button type="button" className="mob-section-see-all mob-danger-link" onClick={() => {
+                                if (window.confirm(tr('Delete this saved address?'))) removeAddress(addr.id)
+                              }}>{tr('Delete')}</button>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
                   ) : (
                     <div className="mob-empty-state">
                       <div className="mob-empty-icon">📍</div>
                       <h4 className="mob-empty-title">{tr('No saved addresses')}</h4>
-                      <p className="mob-empty-desc">{tr('Addresses entered during checkout will be safely saved here.')}</p>
+                      <p className="mob-empty-desc">{tr('Add your first delivery address to check out faster.')}</p>
                     </div>
                   )}
+                  <button type="button" className="mob-btn-primary mob-address-add-btn" onClick={() => openAddressForm(null)}>
+                    + {tr('Add New Address')}
+                  </button>
                 </div>
               )}
+
+              {/* ADD / EDIT ADDRESS FORM */}
+              {activeAccountModal === 'addresses' && addressScreen === 'form' && (
+                <form className="mob-address-form" onSubmit={handleSaveAddress} noValidate>
+                  <div className={`mob-form-group ${addressFormErrors.fullName ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-fullName">{tr('Full Name')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <input
+                      id="mob-address-fullName"
+                      className="mob-form-input"
+                      autoComplete="name"
+                      value={addressForm.fullName}
+                      onChange={(event) => updateAddressField('fullName', event.target.value)}
+                      placeholder={tr('Enter your full name')}
+                      aria-required="true"
+                      aria-invalid={Boolean(addressFormErrors.fullName)}
+                    />
+                    {addressFormErrors.fullName && <span className="mob-field-error">{tr(addressFormErrors.fullName)}</span>}
+                  </div>
+
+                  <div className={`mob-form-group ${addressFormErrors.phone ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-phone">{tr('Phone Number')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <input
+                      id="mob-address-phone"
+                      className="mob-form-input"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={addressForm.phone}
+                      onChange={(event) => updateAddressField('phone', event.target.value)}
+                      placeholder={tr('e.g. 09 123 456 789')}
+                      aria-required="true"
+                      aria-invalid={Boolean(addressFormErrors.phone)}
+                    />
+                    {addressFormErrors.phone && <span className="mob-field-error">{tr(addressFormErrors.phone)}</span>}
+                  </div>
+
+                  <div className={`mob-form-group ${addressFormErrors.region ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-region">{tr('Region / State')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <select
+                      id="mob-address-region"
+                      className="mob-form-input"
+                      value={addressForm.region}
+                      onChange={(event) => updateAddressField('region', event.target.value)}
+                      aria-required="true"
+                      aria-invalid={Boolean(addressFormErrors.region)}
+                    >
+                      <option value="">{tr('Select region / state')}</option>
+                      {Object.keys(MYANMAR_REGIONS).map((region) => (
+                        <option key={region} value={region}>{language === 'my' ? MYANMAR_REGIONS_MY[region] || region : region}</option>
+                      ))}
+                    </select>
+                    {addressFormErrors.region && <span className="mob-field-error">{tr(addressFormErrors.region)}</span>}
+                  </div>
+
+                  <div className={`mob-form-group ${addressFormErrors.township ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-township">{tr('Township')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <select
+                      id="mob-address-township"
+                      className="mob-form-input"
+                      value={addressForm.township}
+                      onChange={(event) => updateAddressField('township', event.target.value)}
+                      disabled={!addressForm.region}
+                      aria-required="true"
+                      aria-invalid={Boolean(addressFormErrors.township)}
+                    >
+                      <option value="">{addressForm.region ? tr('Select township') : tr('Select region / state first')}</option>
+                      {(MYANMAR_REGIONS[addressForm.region] || []).map((township) => (
+                        <option key={township} value={township}>{language === 'my' ? MYANMAR_TOWNSHIP_MY[township] || township : township}</option>
+                      ))}
+                    </select>
+                    {addressFormErrors.township && <span className="mob-field-error">{tr(addressFormErrors.township)}</span>}
+                  </div>
+
+                  <div className={`mob-form-group ${addressFormErrors.addressLine ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-addressLine">{tr('Full Delivery Address')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <textarea
+                      id="mob-address-addressLine"
+                      className="mob-form-textarea"
+                      autoComplete="street-address"
+                      value={addressForm.addressLine}
+                      onChange={(event) => updateAddressField('addressLine', event.target.value)}
+                      placeholder={tr('Township, street, house number, building name, etc.')}
+                      aria-required="true"
+                      aria-invalid={Boolean(addressFormErrors.addressLine)}
+                    />
+                    {addressFormErrors.addressLine && <span className="mob-field-error">{tr(addressFormErrors.addressLine)}</span>}
+                  </div>
+
+                  <div className={`mob-form-group ${addressFormErrors.mapLocation ? 'has-error' : ''}`}>
+                    <label className="mob-form-label" htmlFor="mob-address-mapLocation">{tr('Map Location Picker')} <span className="mob-req" aria-hidden="true">*</span></label>
+                    <div className="mob-map-picker">
+                      <div className="mob-map-picker-canvas" aria-hidden="true">
+                        <svg viewBox="0 0 320 120" role="presentation">
+                          <path d="M0 88 L70 62 L130 78 L190 44 L250 66 L320 38" />
+                          <path d="M40 0 L58 60 L36 120" />
+                          <path d="M150 0 L166 52 L142 120" />
+                          <path d="M262 0 L248 58 L272 120" />
+                        </svg>
+                        {addressForm.mapLocation ? <span className="mob-map-picker-pin" aria-hidden="true">📍</span> : null}
+                      </div>
+                      <div className="mob-map-picker-row">
+                        <input
+                          id="mob-address-mapLocation"
+                          className="mob-form-input"
+                          value={addressForm.mapLocation}
+                          onChange={(event) => updateAddressField('mapLocation', event.target.value)}
+                          placeholder={tr('Pin location on the map')}
+                          aria-required="true"
+                          aria-invalid={Boolean(addressFormErrors.mapLocation)}
+                        />
+                        <button type="button" className="mob-map-picker-btn" onClick={pickMapLocation}>{tr('Use my location')}</button>
+                      </div>
+                    </div>
+                    {addressFormErrors.mapLocation && <span className="mob-field-error">{tr(addressFormErrors.mapLocation)}</span>}
+                  </div>
+
+                  <label className="mob-address-default-toggle">
+                    <input
+                      type="checkbox"
+                      checked={addressForm.isDefault}
+                      onChange={(event) => updateAddressField('isDefault', event.target.checked)}
+                    />
+                    <span>{tr('Set as default address')}</span>
+                  </label>
+
+                  <div className="mob-address-form-actions">
+                    <button type="button" className="mob-btn-secondary" onClick={() => setAddressScreen('list')}>{tr('Cancel')}</button>
+                    <button type="submit" className="mob-btn-primary">
+                      {editingAddressId ? tr('Save changes') : tr('Save Address')}
+                    </button>
+                  </div>
+                </form>
+              )}
+
 
               {/* NOTIFICATIONS MODAL */}
               {activeAccountModal === 'notifications' && (
@@ -2065,14 +2194,61 @@ export default function MobileApp({
                 </div>
               )}
 
+              {/* LANGUAGE MODAL */}
+              {activeAccountModal === 'language' && (
+                <div className="mob-language-options" role="radiogroup" aria-label={tr('Languages')}>
+                  {[
+                    { value: 'en', label: 'English', native: 'English', flag: 'uk' },
+                    { value: 'my', label: 'Myanmar', native: 'မြန်မာ', flag: 'mm' },
+                  ].map((option) => {
+                    const isSelected = language === option.value
+                    return (
+                      <label key={option.value} className={`mob-radio-card mob-language-option ${isSelected ? 'selected' : ''}`}>
+                        <input
+                          type="radio"
+                          name="mob-app-language"
+                          value={option.value}
+                          checked={isSelected}
+                          onChange={() => setLanguage(option.value)}
+                        />
+                        <span className="mob-language-flag" aria-hidden="true">
+                          {option.flag === 'uk' ? (
+                            <svg viewBox="0 0 60 40" width="30" height="20">
+                              <rect width="60" height="40" fill="#012169" />
+                              <path d="M0 0 60 40M60 0 0 40" stroke="#fff" strokeWidth="8" />
+                              <path d="M0 0 60 40M60 0 0 40" stroke="#c8102e" strokeWidth="4" />
+                              <path d="M30 0v40M0 20h60" stroke="#fff" strokeWidth="13" />
+                              <path d="M30 0v40M0 20h60" stroke="#c8102e" strokeWidth="8" />
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 60 40" width="30" height="20">
+                              <rect width="60" height="40" fill="#fecb00" />
+                              <rect x="20" width="20" height="40" fill="#ea2839" />
+                              <rect y="13" width="60" height="14" fill="#34b233" />
+                              <rect x="20" y="13" width="20" height="14" fill="#fff" />
+                              <polygon points="30,17 31.9,23 38,23 33.1,26.7 35,32.7 30,29 25,32.7 26.9,26.7 22,23 28.1,23" fill="#fff" />
+                            </svg>
+                          )}
+                        </span>
+                        <div className="mob-radio-info">
+                          <span className="mob-radio-title">{tr(option.label)}</span>
+                          {option.native !== tr(option.label) && <span className="mob-radio-desc">{option.native}</span>}
+                        </div>
+                        <div className="mob-radio-circle" />
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* SETTINGS MODAL */}
               {activeAccountModal === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.85rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <label htmlFor="mob-language">{tr('Language')}</label>
                     <select id="mob-language" value={language} onChange={(event) => setLanguage(event.target.value)}>
-                      <option value="en">🇺🇸 English</option>
-                      <option value="my">🇲🇲 {tr('Myanmar')}</option>
+                      <option value="en">ðŸ‡ºðŸ‡¸ English</option>
+                      <option value="my">ðŸ‡²ðŸ‡² {tr('Myanmar')}</option>
                     </select>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2114,32 +2290,21 @@ export default function MobileApp({
 
               {/* HELP & SUPPORT */}
               {activeAccountModal === 'help' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.85rem' }}>
-                  {supportChannels
-                    .filter((channel) => channel.status === 'Active' || channel.enabled === true)
-                    .sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0))
-                    .map((channel) => {
-                      const contactLink = getSupportHref(channel.link || channel.contact)
-                      return (
-                        <div key={channel.id} className="mob-support-channel">
-                          <div className="mob-support-channel-copy">
-                            <strong>{channel.channel || channel.name}</strong>
-                            {channel.accountName && <span>{channel.accountName}</span>}
-                            {channel.username && <span>{channel.username}</span>}
-                            {channel.description && <p>{channel.description}</p>}
-                          </div>
-                          {contactLink
-                            ? <a href={contactLink} target="_blank" rel="noopener noreferrer">{tr('Contact / Open')}</a>
-                            : <span className="mob-support-unavailable">{tr('Contact details unavailable')}</span>}
-                        </div>
-                      )
-                    })}
-                  {supportChannels.filter((channel) => channel.status === 'Active' || channel.enabled === true).length === 0 && (
-                    <div className="mob-empty-state">
-                      <h4 className="mob-empty-title">{tr('No support channels available')}</h4>
-                      <p className="mob-empty-desc">{tr('Please check back later for shop contact options.')}</p>
-                    </div>
-                  )}
+                <div className="mob-support-panel">
+                  <p className="mob-support-intro">
+                    {tr('Reach our team on any channel below — we are happy to help with orders, payments and delivery.')}
+                  </p>
+
+                  <SupportChannelList
+                    channels={supportChannels}
+                    loading={supportChannelsLoading}
+                    error={supportChannelsError}
+                    onRetry={loadSupportChannels}
+                    tr={tr}
+                    onNotify={setSupportNotice}
+                  />
+
+                  <p className="sr-only" role="status" aria-live="polite">{supportNotice}</p>
                 </div>
               )}
 
@@ -2192,7 +2357,7 @@ export default function MobileApp({
                     <div>{tr('Shipping fee')}<strong>{formatPrice(selectedOrder.shippingFee ?? selectedOrder.deliveryFee ?? 0)}</strong></div>
                     <div><strong>{tr('Grand Total')}</strong><strong>{formatPrice(selectedOrder.total || 0)}</strong></div>
                   </div>
-                  {user?.id && (
+                  {activeAccountModal === 'chat' && user?.id && (
                     <>
                       <h4 style={{ fontSize: '0.85rem', fontWeight: 800, margin: '0.5rem 0' }}>{tr('Chat with Shop Owner')}</h4>
                       <div className="mob-chat-thread">
@@ -2239,13 +2404,13 @@ export default function MobileApp({
           <section className="mob-sheet mob-search-sheet" role="dialog" aria-modal="true" aria-label={tr(searchSheet === 'filter' ? 'Filter' : 'Sort')} onClick={(event) => event.stopPropagation()}>
             <div className="mob-sheet-head">
               <h3>{tr(searchSheet === 'filter' ? 'Filter' : 'Sort')}</h3>
-              <button className="mob-icon-btn" onClick={() => setSearchSheet('')} aria-label={tr('Close')}>✕</button>
+              <button className="mob-icon-btn" onClick={() => setSearchSheet('')} aria-label={tr('Close')}>✢</button>
             </div>
             {searchSheet === 'filter' ? (
               <div className="mob-sheet-scroll">
                 <h4>{tr('Category')}</h4>
                 <div className="mob-search-category-list">
-                  {['All', 'Men', 'Women', 'Kids', 'Shoes', 'Bags', 'Accessories', 'New Collection', 'Sale'].map((category) => (
+                  {['All', '✦', 'Women', 'Kids', 'Shoes', 'Bags', 'Accessories', 'New Collection', 'Sale'].map((category) => (
                     <button key={category} className={`mob-chip ${selectedMobileCategory === category ? 'active' : ''}`} onClick={() => {
                       setSelectedMobileCategory(category)
                       setSelectedCategory?.(category === 'All' || category === 'Sale' ? '' : category)
@@ -2317,7 +2482,7 @@ export default function MobileApp({
           <section className="mob-sheet mob-delete-sheet" role="alertdialog" aria-modal="true" aria-labelledby="mob-delete-title" onClick={(event) => event.stopPropagation()}>
             <div className="mob-sheet-head">
               <h3 id="mob-delete-title">{tr('Delete Account')}?</h3>
-              <button className="mob-icon-btn" disabled={deleteBusy} onClick={() => setDeleteConfirmationOpen(false)} aria-label={tr('Close')}>✕</button>
+              <button className="mob-icon-btn" disabled={deleteBusy} onClick={() => setDeleteConfirmationOpen(false)} aria-label={tr('Close')}>✢</button>
             </div>
             <p>{tr('This permanently removes your customer profile and saved account data. Your order records may be retained with personal details removed. This cannot be undone.')}</p>
             <label className="mob-form-label" htmlFor="mob-delete-confirm">{tr('Type DELETE to confirm')}</label>
@@ -2341,71 +2506,75 @@ function MobileProductCard({ product, wished, onWish, onAdd, onSelect, formatPri
   const tr = (text) => t(text, language)
   const variants = getProductVariants(product)
   const variantRequired = variants.sizes.length > 0 || variants.colors.length > 0
+  const rating = Number(product.rating) || 0
+  const reviewCount = Number(product.reviewsCount) || 0
+  const roundRating = Math.round(rating)
+  const reviewLabel = reviewCount > 0 ? `(${reviewCount > 999 ? `${(reviewCount / 1000).toFixed(1)}k` : reviewCount})` : tr('New')
+  const title = language === 'my' ? product.nameMy || product.name : product.name
   const discountPercent = product.oldPrice && product.oldPrice > product.price
     ? Math.round(((product.oldPrice - product.price) / product.oldPrice) * 100)
     : null
 
   return (
-    <article className="mob-product-card" onClick={onSelect}>
+    <article className={`mob-product-card${Number(product.stock) <= 0 ? ' is-sold-out' : ''}`} onClick={onSelect}>
       <div className="mob-card-img-wrap">
-        <img className="mob-card-img" src={product.image} alt={product.name} loading="lazy" />
+        <img className="mob-card-img" src={product.image} alt={title} loading="lazy" />
 
-        {/* Discount Badge */}
-        {discountPercent ? (
-          <span className="mob-badge-discount">-{discountPercent}%</span>
-        ) : product.category === 'Sale' ? (
-          <span className="mob-badge-discount">{tr('SALE')}</span>
-        ) : null}
+        {/* Tags layered over the lower-left of the image */}
+        <div className="mob-card-badges">
+          {discountPercent ? <span className="mob-card-tag mob-card-tag--discount">{discountPercent}% OFF</span> : null}
+          {!discountPercent && (product.isBestSeller || roundRating === 5) ? <span className="mob-card-tag mob-card-tag--best">{tr('Best Seller')}</span> : null}
+          {Number(product.stock) <= 0 ? <span className="mob-card-tag mob-card-tag--muted">{tr('Sold out')}</span> : null}
+        </div>
 
         {/* Wishlist Button */}
         <button
-          className={`mob-btn-wish ${wished ? 'active' : ''}`}
+          type="button"
+          className={`mob-card-heart ${wished ? 'is-active' : ''}`}
           onClick={(e) => { e.stopPropagation(); onWish() }}
-          aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
+          aria-pressed={wished}
+          aria-label={`${tr(wished ? 'Remove from wishlist' : 'Add to wishlist')}: ${title}`}
         >
-          {wished ? '❤️' : '🤍'}
+          <svg viewBox="0 0 24 24" width="15" height="15" fill={wished ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+          </svg>
         </button>
 
         {/* In Stock Badge */}
         {product.stock > 0 && product.stock <= 5 && (
           <span className="mob-badge-stock">{product.stock} left</span>
         )}
-        {product.stock <= 0 && (
-          <span className="mob-badge-stock mob-badge-sold-out">{tr('Out of stock')}</span>
-        )}
       </div>
 
       <div className="mob-card-content">
-        <div>
-          <div className="mob-card-brand">{product.brand || 'HTOO'}</div>
-          <h4 className="mob-card-title">{language === 'my' ? product.nameMy || product.name : product.name}</h4>
+        <h4 className="mob-card-title">{title}</h4>
 
-          {/* Rating */}
-          <div className="mob-card-rating">
-            {Number(product.rating) > 0 ? (
-              <>
-                <span className="mob-star-icon">★</span>
-                <span>{Number(product.rating).toFixed(1)}</span>
-              </>
-            ) : <span>{tr('No ratings yet')}</span>}
-          </div>
-
-          {/* Price */}
-          <div className="mob-card-price-row">
-            <span className="mob-card-price">{formatPrice(product.price)}</span>
-            {product.oldPrice && <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span>}
-          </div>
+        <div className="mob-card-price-row">
+          <span className="mob-card-price">{formatPrice(product.price)}</span>
+          {product.oldPrice ? <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span> : null}
         </div>
 
-        {/* Quick Add Button */}
-        <AddToCartButton
-          className="mob-card-add-btn"
-          productName={product.name}
-          language={language}
-          disabled={Number(product.stock) <= 0}
-          onClick={variantRequired ? onSelect : onAdd}
-        />
-      </div>
+        <div className="mob-card-foot">
+          <div className="mob-card-rating" aria-label={`${rating.toFixed(1)} / 5, ${reviewLabel}`}>
+            <span className="mob-card-stars" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((index) => (
+                <svg key={index} viewBox="0 0 24 24" width="10" height="10" fill={index < roundRating ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+                  <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z" />
+                </svg>
+              ))}
+            </span>
+            <span className="mob-card-reviews">{reviewLabel}</span>
+          </div>
+
+          <AddToCartButton
+            className="mob-card-add-btn"
+            productName={title}
+            language={language}
+            disabled={Number(product.stock) <= 0}
+            onClick={variantRequired ? onSelect : onAdd}
+          />
+          </div>
+        </div>
     </article>
   )
 }
@@ -2546,8 +2715,8 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
                   <span className="mob-detail-image-count" aria-live="polite">{selectedImageIndex + 1}/{images.length}</span>
                 </>
               )}
-              <button className={`mob-detail-wishlist ${wished ? 'active' : ''}`} onClick={onWish} aria-label={wished ? tr('Remove from wishlist') : tr('Add to wishlist')}>
-                {wished ? '♥' : '♡'}
+              <button className={`mob-detail-wishlist ${wished ? '❤️' : '🤍'}`} onClick={onWish} aria-label={wished ? tr('Remove from wishlist') : tr('Add to wishlist')}>
+          {wished ? '❤️' : '🤍'}
               </button>
             </div>
             {images.length > 1 && (

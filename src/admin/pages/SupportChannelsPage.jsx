@@ -205,8 +205,13 @@ function ChannelModal({ channel, onClose, onSave }) {
                 onChange={(e) => setFormData({ ...formData, channel: e.target.value })}
               >
                 <option value="Facebook">{adminT("Facebook")}</option>
-                <option value="Viber">{adminT("Viber")}</option>
                 <option value="Telegram">{adminT("Telegram")}</option>
+                <option value="Viber">{adminT("Viber")}</option>
+                <option value="Phone">{adminT("Phone")}</option>
+                <option value="Email">{adminT("Email")}</option>
+                <option value="Instagram">{adminT("Instagram")}</option>
+                <option value="WhatsApp">{adminT("WhatsApp")}</option>
+                <option value="TikTok">{adminT("TikTok")}</option>
               </select>
               {error && <span className="form-error">{adminT(error)}</span>}
             </div>
@@ -236,7 +241,7 @@ function ChannelModal({ channel, onClose, onSave }) {
             <label>{adminT("Link")}</label>
             <input
               type="text"
-              placeholder={adminT("https://...")}
+              placeholder={adminT(formData.channel === 'Phone' ? 'tel:+959...' : formData.channel === 'Email' ? 'mailto:shop@example.com' : 'https://...')}
               value={formData.link}
               onChange={(e) => setFormData({ ...formData, link: e.target.value })}
             />

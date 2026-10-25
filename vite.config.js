@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/my-online-shop/',
   plugins: [react()],
   server: {
     host: true,

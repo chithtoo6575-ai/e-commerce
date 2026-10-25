@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { getCart, mergeCart, mergeWishlist, saveCart, saveWishlist } from './lib/storage'
 import { useLanguage } from './lib/i18n'
 import { getProductStock, getProductVariants, hasVariantStock, variantStockKey } from './lib/productVariants'
+import { readJsonResponse, apiErrorMessage } from './lib/apiResponse'
 import DesktopApp from './DesktopApp'
 import MobileApp from './MobileApp'
 import { adminStore } from './admin/adminStore'
+import { fetchSupportChannels, mergeSupportChannels } from './lib/supportChannels'
 
 const GUEST_CART_KEY = 'atelier_guest_cart'
 const GUEST_WISHLIST_KEY = 'atelier_guest_wishlist'
@@ -45,6 +47,63 @@ function getOrderRequestKey() {
     fallbackOrderRequestKey ||= createRequestKey()
     return fallbackOrderRequestKey
   }
+}
+
+// Identifies one selectable cart line: the product plus its chosen size/color.
+const cartLineKey = (item) => `${item.id}:${item.variants?.size || ''}:${item.variants?.color || ''}`
+
+// The single cart shape the cart API and the order API both expect. Prices, names and
+// other display fields are deliberately left out so a stale local copy can never make
+// the server think the cart changed.
+function buildCartPayload(items) {
+  const lines = new Map()
+  for (const item of Array.isArray(items) ? items : []) {
+    const id = String(item.id || item.productId || '')
+    if (!id) continue
+    const size = String(item.variants?.size || '')
+    const color = String(item.variants?.color || '')
+    const key = `${id}:${size}:${color}`
+    const quantity = Math.max(1, Math.trunc(Number(item.quantity) || 1))
+    // The same product+variant can arrive twice (e.g. from a guest merge); send one line.
+    const existing = lines.get(key)
+    if (existing) existing.quantity += quantity
+    else lines.set(key, { id, productId: id, quantity, selected: item.selected !== false, variants: { ...(size ? { size } : {}), ...(color ? { color } : {}) } })
+  }
+  return [...lines.values()]
+}
+
+// Put saved lines back after a failed submission, adding only what is missing so a cart
+// edited in another tab is not clobbered.
+function mergeCartLines(current, lines) {
+  const next = [...current]
+  for (const line of lines) {
+    const key = cartLineKey(line)
+    const existing = next.find((item) => cartLineKey(item) === key)
+    if (existing) existing.quantity = Math.max(Number(existing.quantity) || 0, Number(line.quantity) || 0)
+    else next.push(line)
+  }
+  return next
+}
+
+// What the shop should keep after a successful order: every line that was NOT ordered,
+// plus whatever is left of an ordered line when only part of its quantity was bought.
+function remainingCartFor(savedOrder, orderedItems, previousCart) {
+  const ordered = Array.isArray(savedOrder?.items) ? savedOrder.items : orderedItems
+  const consumed = new Map()
+  for (const item of ordered) {
+    const key = cartLineKey({ ...item, id: item.productId || item.id })
+    consumed.set(key, (consumed.get(key) || 0) + (Number(item.quantity) || 0))
+  }
+  const remaining = []
+  for (const item of previousCart) {
+    const key = cartLineKey(item)
+    const bought = consumed.get(key) || 0
+    const left = (Number(item.quantity) || 0) - bought
+    if (left > 0) remaining.push({ ...item, quantity: left })
+    consumed.delete(key)
+  }
+  // Lines ordered that were not in the local cart (e.g. changed elsewhere) are done too.
+  return remaining
 }
 
 function getGuestOrderAccessKey() {
@@ -211,12 +270,17 @@ export default function App() {
   const [cart, setCart] = useState([])
   const [cartLoadedFor, setCartLoadedFor] = useState('')
   const [cartSyncReadyFor, setCartSyncReadyFor] = useState('')
+  // Latest in-flight cart save, so checkout never submits a cart the account does not have yet.
+  const cartSyncRef = useRef(null)
   const [wishlist, setWishlist] = useState([])
   const [activeTab, setActiveTab] = useState('home')
   const [storefrontBanners, setStorefrontBanners] = useState(() => adminStore.getBanners())
   const [storefrontSections, setStorefrontSections] = useState(() => adminStore.getHomeSections())
   const [storefrontLayout, setStorefrontLayout] = useState(() => adminStore.getHomeLayout())
+  // Active channels published by the admin; re-fetched when the Help page opens.
   const [supportChannels, setSupportChannels] = useState(() => adminStore.getSupportChannels())
+  const [supportChannelsLoading, setSupportChannelsLoading] = useState(false)
+  const [supportChannelsError, setSupportChannelsError] = useState('')
   const [storefrontNotifications, setStorefrontNotifications] = useState(() => adminStore.getNotifications())
   const [selectedCategory, setSelectedCategory] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -224,7 +288,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('popular')
   const [filters, setFilters] = useState(initialFilters)
   const [coupon, setCoupon] = useState('')
-  const [checkoutStep, setCheckoutStep] = useState(1)
+  const [checkoutStep, setCheckoutStep] = useState('review')
   const [addressBook, setAddressBook] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
@@ -234,6 +298,7 @@ export default function App() {
     }
   })
   const [paymentMethods, setPaymentMethods] = useState([])
+  const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
   const [promotions, setPromotions] = useState([])
   const [paymentSlip, setPaymentSlip] = useState('')
   const [orders, setOrders] = useState([])
@@ -259,7 +324,7 @@ export default function App() {
       setStorefrontBanners(adminStore.getBanners())
       setStorefrontSections(adminStore.getHomeSections())
       setStorefrontLayout(adminStore.getHomeLayout())
-      setSupportChannels(adminStore.getSupportChannels())
+      setSupportChannels((current) => mergeSupportChannels(adminStore.getSupportChannels(), current))
       setStorefrontNotifications(adminStore.getNotifications())
     }
     const handleAdminStoreUpdate = (event) => {
@@ -276,6 +341,26 @@ export default function App() {
       window.removeEventListener('storage', handleStorage)
     }
   }, [])
+
+  // Pull the live, active-only channel list. Called on mount and whenever the
+  // customer opens Help, so a change made in the dashboard shows up right away.
+  const loadSupportChannels = useCallback(async () => {
+    setSupportChannelsLoading(true)
+    setSupportChannelsError('')
+    try {
+      const channels = await fetchSupportChannels()
+      setSupportChannels(mergeSupportChannels(channels, adminStore.getSupportChannels()))
+    } catch (channelError) {
+      console.warn('[support] Could not load support channels from the server:', channelError)
+      setSupportChannelsError('Unable to load the latest support channels. Please try again.')
+    } finally {
+      setSupportChannelsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSupportChannels()
+  }, [loadSupportChannels])
 
   useEffect(() => {
     try {
@@ -302,7 +387,7 @@ export default function App() {
       const saved = JSON.parse(localStorage.getItem('hto_checkout_draft') || '{}')
       if (saved && typeof saved === 'object') {
         setCheckoutForm((current) => ({ ...current, ...saved.form }))
-        if (Number.isInteger(saved.step) && saved.step >= 1 && saved.step <= 5) setCheckoutStep(saved.step)
+        setCheckoutStep('review')
       }
     } catch (storageError) {
       console.warn('[checkout] Could not restore checkout progress.', storageError)
@@ -378,13 +463,6 @@ export default function App() {
       })
       .catch(() => {})
 
-    fetch('/api/payments')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('payments')))
-      .then((data) => {
-        if (Array.isArray(data.payments)) setPaymentMethods(data.payments)
-      })
-      .catch(() => {})
-
     fetch('/api/promotions')
       .then((res) => res.ok ? res.json() : Promise.reject(new Error('promotions')))
       .then((data) => {
@@ -402,6 +480,14 @@ export default function App() {
       })
       .catch(() => {})
 
+  }, [])
+
+  const refreshPaymentMethods = useCallback(async () => {
+    const response = await fetch('/api/payments')
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to load active payment methods.')
+    if (!Array.isArray(result.payments)) throw new Error('The payment methods API returned invalid data.')
+    return result.payments
   }, [])
 
   useEffect(() => {
@@ -447,19 +533,55 @@ export default function App() {
   useEffect(() => {
     if (route.page !== 'checkout') return
     let active = true
+    const refreshActivePayments = async () => {
+      try {
+        const available = await refreshPaymentMethods()
+        if (active) {
+          setPaymentMethods(available)
+          setPaymentMethodsLoaded(true)
+        }
+      } catch (loadError) {
+        console.error('[checkout] Could not refresh active payment methods.', loadError)
+        if (active) setError(loadError.message || 'Unable to load active payment methods.')
+      }
+    }
     Promise.all([
-      fetch('/api/payments').then((response) => response.ok ? response.json() : Promise.reject(new Error('Unable to load payment accounts.'))),
+      refreshPaymentMethods(),
       fetch('/api/promotions').then((response) => response.ok ? response.json() : Promise.reject(new Error('Unable to load promotions.')))
     ]).then(([paymentData, promotionData]) => {
       if (!active) return
-      const available = Array.isArray(paymentData.payments) ? paymentData.payments : []
-      setPaymentMethods(available)
+      setPaymentMethods(paymentData)
+      setPaymentMethodsLoaded(true)
       setPromotions(Array.isArray(promotionData.promotions) ? promotionData.promotions : [])
     }).catch((loadError) => {
       if (active) setError(loadError.message)
     })
-    return () => { active = false }
-  }, [route.page])
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshActivePayments()
+    }
+    const timer = window.setInterval(() => { void refreshActivePayments() }, 15_000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [route.page, refreshPaymentMethods])
+
+  useEffect(() => {
+    if (!paymentMethodsLoaded) return
+    // An empty selection means the customer is picking a payment kind right now:
+    // wait for them instead of silently jumping back to the first account (COD).
+    if (route.page === 'checkout' && !checkoutForm.paymentAccountId) return
+    if (paymentMethods.some((payment) => payment.id === checkoutForm.paymentAccountId)) return
+    const nextPaymentId = paymentMethods[0]?.id || ''
+    setCheckoutForm((current) => current.paymentAccountId === nextPaymentId
+      ? current
+      : { ...current, paymentAccountId: nextPaymentId })
+    setPaymentSlip('')
+  }, [paymentMethods, paymentMethodsLoaded, checkoutForm.paymentAccountId, route.page])
 
   useEffect(() => {
     let active = true
@@ -500,23 +622,34 @@ export default function App() {
     else writeGuestList(GUEST_CART_KEY, cart)
   }, [cart, cartLoadedFor, user?.id])
 
+  // Save the cart to the account. Order placement waits for the latest sync to land,
+  // so what the server has always matches what checkout is about to submit.
+  const syncCartToAccount = useCallback((items) => {
+    const request = fetch('/api/customer/cart', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Cart-Sync-Mode': 'replace' },
+      body: JSON.stringify({ items: buildCartPayload(items) })
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to sync your cart.')
+        writeGuestList(GUEST_CART_KEY, [])
+        return true
+      })
+    cartSyncRef.current = request
+    request
+      .catch((syncError) => {
+        if (cartSyncRef.current === request) cartSyncRef.current = null
+        setError(syncError.message || 'Unable to sync your cart with your account.')
+      })
+    return request
+  }, [])
+
   useEffect(() => {
     if (!user?.id || cartSyncReadyFor !== user.id) return
-    const timer = window.setTimeout(() => {
-      fetch('/api/customer/cart', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: cart.map((item) => ({ id: item.id, quantity: item.quantity, variants: item.variants || {}, selected: item.selected !== false })) })
-      })
-        .then(async (response) => {
-          const result = await response.json()
-          if (!response.ok) throw new Error(result.error || 'Unable to sync your cart.')
-          writeGuestList(GUEST_CART_KEY, [])
-        })
-        .catch((syncError) => setError(syncError.message || 'Unable to sync your cart with your account.'))
-    }, 250)
+    const timer = window.setTimeout(() => { void syncCartToAccount(cart) }, 250)
     return () => window.clearTimeout(timer)
-  }, [cart, cartSyncReadyFor, user?.id])
+  }, [cart, cartSyncReadyFor, user?.id, syncCartToAccount])
 
   useEffect(() => {
     if (user?.id) saveWishlist(user.id, wishlist)
@@ -605,14 +738,15 @@ export default function App() {
 
   const wishlistProducts = useMemo(() => products.filter((product) => wishlist.includes(product.id)), [products, wishlist])
   const cartSubtotal = useMemo(() => cart.reduce((sum, item) => {
-    if (item.selected === false) return sum
     const quantity = Number.isSafeInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0
     const product = products.find((candidate) => String(candidate.id) === String(item.id))
     const price = Number(product?.discountPrice ?? product?.price ?? item.price)
     return sum + Math.max(0, Number.isFinite(price) ? price : 0) * quantity
   }, 0), [cart, products])
   const deliveryFee = checkoutForm.deliveryMethod === 'cargate' ? Math.max(0, Number(settings.carGatePickupFee) || 0) : 0
-  const selectedPaymentAccount = paymentMethods.find((payment) => payment.id === checkoutForm.paymentAccountId) || paymentMethods[0] || null
+  // No silent fallback to the first account: while the customer is choosing a
+  // payment kind (empty id) nothing is selected, and place-order stays blocked.
+  const selectedPaymentAccount = paymentMethods.find((payment) => payment.id === checkoutForm.paymentAccountId) || null
   const isCashPayment = selectedPaymentAccount?.type === 'cash' || selectedPaymentAccount?.id === 'cod'
   const activePromotion = promotions.find((promotion) => {
     const code = String(promotion.code || promotion.name || '').trim().toUpperCase()
@@ -627,42 +761,72 @@ export default function App() {
     setRoute({ page: 'auth' })
   }
 
-  function beginCheckout() {
-    setCheckoutStep(1)
+  function beginCheckout(startStep = 'review') {
+    // Prefill the form with the customer's default saved address (or the most recent one),
+    // falling back to the signed-in account so checkout never opens with blank required fields.
+    const defaultAddress = addressBook.find((address) => address.default) || addressBook[0]
+    setCheckoutForm((current) => ({
+      ...current,
+      name: defaultAddress?.fullName || current.name || user?.name || '',
+      phone: defaultAddress?.phone || current.phone || user?.phone || '',
+      township: defaultAddress?.township || current.township,
+      city: defaultAddress?.region || current.city,
+      shippingAddress: defaultAddress?.value || defaultAddress?.addressLine || current.shippingAddress
+    }))
+    setCheckoutStep(startStep)
     setError('')
     setRoute({ page: 'checkout' })
+  }
+
+  // Checkout back button: return to the cart screen, never the step-by-step form.
+  function exitCheckoutToCart() {
+    setError('')
+    setCheckoutStep('review')
+    setRoute({ page: 'main' })
+    setActiveTab('cart')
   }
 
   async function submitAuth(event) {
     event.preventDefault()
     setError('')
     setAuthNotice('')
-    setAuthBusy(true)
     const form = new FormData(event.currentTarget)
+    const isSignup = authMode === 'signup'
+    const password = String(form.get('password') || '')
+    if (isSignup && password !== String(form.get('confirmPassword') || '')) {
+      setError('Passwords do not match.')
+      return
+    }
+    setAuthBusy(true)
     try {
       const phone = String(form.get('phone') || '')
-      const isSignup = authMode === 'signup'
+      const email = String(form.get('email') || '').trim()
+      const identifier = String(form.get('identifier') || '').trim()
       const isPasswordReset = authFlow === 'forgot'
-      const password = String(form.get('password') || '')
-      const response = await fetch(isSignup || isPasswordReset ? '/api/customer/phone/request' : '/api/customer/phone/login', {
+      const response = await fetch(isSignup
+        ? '/api/customer/phone/signup'
+        : isPasswordReset
+          ? '/api/customer/phone/request'
+          : '/api/customer/phone/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isSignup
-          ? { phone, mode: 'signup', name: String(form.get('name') || ''), password }
+          ? { name: String(form.get('name') || ''), phone, email, password, confirmPassword: String(form.get('confirmPassword') || '') }
           : isPasswordReset
             ? { phone, mode: 'reset-password' }
-            : { phone, password })
+            : { identifier, password })
       })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || (isSignup || isPasswordReset ? 'Unable to send a verification code.' : 'Unable to log in.'))
-      setAuthPhone(phone)
-      if (!isSignup && !isPasswordReset) {
+      const result = await readJsonResponse(response, isSignup ? 'Unable to create the account.' : isPasswordReset ? 'Unable to send a verification code.' : 'Unable to log in.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, isSignup ? 'Unable to create the account.' : isPasswordReset ? 'Unable to send a verification code.' : 'Unable to log in.'))
+      if (!result.customer && !isPasswordReset) throw new Error('The server returned an unexpected response. Please try again.')
+      setAuthPhone(isPasswordReset ? phone : '')
+      if (isSignup || !isPasswordReset) {
         setCartSyncReadyFor('')
         setUser(result.customer)
         setRoute({ page: 'main' })
         return
       }
-      setAuthOtpPurpose(isSignup ? 'signup' : 'reset-password')
+      setAuthOtpPurpose('reset-password')
       setAuthChallengeId(result.challengeId)
       setAuthFlow('otp')
       setError('')
@@ -670,7 +834,7 @@ export default function App() {
         ? `Local test OTP: ${result.developmentOnlyCode}. No SMS was sent.`
         : 'A verification code was sent to your phone.')
     } catch (authError) {
-      setError(authError.message || 'Unable to send a verification code. Please try again.')
+      setError(authError?.message || (isSignup ? 'Unable to create the account. Please try again.' : isPasswordReset ? 'Unable to send a verification code. Please try again.' : 'Unable to log in. Please try again.'))
     } finally {
       setAuthBusy(false)
     }
@@ -863,10 +1027,6 @@ export default function App() {
     setCart((current) => current.filter((item) => (item.cartKey || item.id) !== id))
   }
 
-  function updateCartItem(id, changes) {
-    setCart((current) => current.map((item) => (item.cartKey || item.id) === id ? { ...item, ...changes } : item))
-  }
-
   function toggleWishlist(productId) {
     setWishlist((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId])
   }
@@ -919,8 +1079,8 @@ export default function App() {
   }
 
   function validateCheckoutStep(step) {
-    const selectedCart = cart.filter((item) => item.selected !== false)
-    if (!selectedCart.length) return 'Select at least one item to continue.'
+    const checkoutCart = cart
+    if (!checkoutCart.length) return 'Your cart is empty.'
     if (step === 1) {
       if (!checkoutForm.name.trim()) return 'Enter your full name.'
       if (!checkoutForm.phone.trim()) return 'Enter your phone number.'
@@ -931,7 +1091,7 @@ export default function App() {
     if (step === 3 && !isCashPayment && !paymentSlip) return 'Upload your payment slip to continue.'
     if (step >= 4) {
       if (!Number.isFinite(cartTotal) || cartTotal <= 0) return 'Check your cart and order total before continuing.'
-      const unavailable = selectedCart.find((item) => {
+      const unavailable = checkoutCart.find((item) => {
         const product = products.find((candidate) => String(candidate.id) === String(item.id))
         if (!product || product.enabled === false || !Number.isInteger(item.quantity) || item.quantity < 1 ||
           item.quantity > getProductStock(product, item.variants)) return true
@@ -979,9 +1139,24 @@ export default function App() {
         return
       }
 
-      const selectedCart = cart.filter((item) => item.selected !== false)
-      if (!selectedCart.length) {
-        setError('Select at least one item to place your order.')
+      const checkoutCart = cart
+      if (!checkoutCart.length) {
+        setError('Your cart is empty.')
+        return
+      }
+      // Saving the account cart must finish before the order is sent, otherwise the server
+      // still has an older cart and rejects the order as "changed".
+      if (user?.id) {
+        try {
+          await (cartSyncRef.current || syncCartToAccount(checkoutCart))
+        } catch (syncError) {
+          setError(syncError.message || 'Unable to sync your cart with your account. Please try again.')
+          return
+        }
+      }
+      const orderItems = buildCartPayload(checkoutCart)
+      if (!orderItems.length) {
+        setError('Your cart is empty.')
         return
       }
       const order = {
@@ -994,13 +1169,7 @@ export default function App() {
           city: checkoutForm.city,
           address: checkoutForm.shippingAddress
         },
-        items: selectedCart.map((item) => {
-          const product = products.find((candidate) => String(candidate.id) === String(item.id))
-          const variants = { ...item.variants }
-          if (!product?.availableVariants?.sizes?.length) delete variants.size
-          if (!product?.availableVariants?.colors?.length) delete variants.color
-          return { ...item, selected: true, variants, productId: item.id }
-        }),
+        items: orderItems,
         subtotal: cartSubtotal,
         deliveryFee,
         discount: couponDiscount,
@@ -1009,6 +1178,12 @@ export default function App() {
         paymentAccountId: selectedPaymentAccount.id,
         receipt: paymentSlip ? { dataUrl: paymentSlip } : null
       }
+      // Lines already represented in this order must not be retried if the response was
+      // lost, so drop the cart before every attempt and restore it when the server says no.
+      const orderedCart = checkoutCart
+      const orderedLineKeys = new Set(orderItems.map(cartLineKey))
+      const dropOrderedLines = (items) => items.filter((item) => !orderedLineKeys.has(cartLineKey(item)))
+      if (user?.id) setCart((current) => dropOrderedLines(current))
 
       console.info('[checkout] Sending order request', {
         method: 'POST',
@@ -1035,7 +1210,12 @@ export default function App() {
           status: response.status,
           error: responseError
         })
-        if (!response.ok) clearOrderRequestKey()
+        // The network layer refused or dropped the request, so it was never processed:
+        // put the cart back and allow a clean retry with a fresh request key.
+        if (!response.status) {
+          clearOrderRequestKey()
+          setCart((current) => mergeCartLines(current, orderedCart))
+        }
         setError('Unable to confirm your order. Please check My Orders before trying again.')
         return
       }
@@ -1050,11 +1230,13 @@ export default function App() {
           status: response.status,
           error: result.error || 'Unable to place order.'
         })
+        setCart((current) => mergeCartLines(current, orderedCart))
         setError(result.error || 'Unable to place order. Please check your details and try again.')
         return
       }
       if (!result.ok || !result.order?.id) {
         console.error('[checkout] Order API returned an incomplete success response')
+        setCart((current) => mergeCartLines(current, orderedCart))
         setError('Unable to confirm your order. Please check My Orders before trying again.')
         return
       }
@@ -1066,21 +1248,33 @@ export default function App() {
       })
       setOrders((current) => [savedOrder, ...current])
       setSelectedOrder(savedOrder)
-      setCart((current) => current.filter((item) => item.selected === false))
+      // The server has already consumed the ordered lines; mirror exactly what is left.
+      setCart((current) => mergeCartLines(current, remainingCartFor(savedOrder, orderedCart, checkoutCart)))
       setPaymentSlip('')
       setCoupon('')
       try { localStorage.removeItem('hto_checkout_draft') } catch (storageError) { console.warn('[checkout] Could not clear checkout draft.', storageError) }
       if (checkoutForm.saveAddress && checkoutForm.shippingAddress) {
-        addAddress({ label: 'Home', value: checkoutForm.shippingAddress, default: addressBook.length === 0 })
+        addAddress({
+          label: 'Home',
+          fullName: checkoutForm.name || user?.name || '',
+          phone: checkoutForm.phone || user?.phone || '',
+          region: checkoutForm.city || '',
+          township: checkoutForm.township || '',
+          addressLine: checkoutForm.shippingAddress,
+          value: [checkoutForm.shippingAddress, checkoutForm.township, checkoutForm.city].filter(Boolean).join(', '),
+          default: addressBook.length === 0
+        })
       }
       setError('')
       setRoute({ page: 'confirmation' })
+      return savedOrder
     } catch (submitError) {
       console.error('[checkout] Unexpected error while placing order', submitError)
       const detail = submitError?.message || String(submitError)
       setError(import.meta.env.DEV
         ? `Unable to place order: ${detail}`
         : 'Unable to place order. Please check your payment slip and try again.')
+      return null
     }
   }
 
@@ -1148,6 +1342,9 @@ export default function App() {
     storefrontSections,
     storefrontLayout,
     supportChannels,
+    supportChannelsLoading,
+    supportChannelsError,
+    loadSupportChannels,
     storefrontNotifications,
     language,
     setLanguage: changeCustomerLanguage,
@@ -1197,12 +1394,12 @@ export default function App() {
     cartTotal,
     startApp,
     beginCheckout,
+    exitCheckoutToCart,
     submitAuth,
     resetCustomerPassword,
     continueAsGuest,
     addToCart,
     updateQuantity,
-    updateCartItem,
     removeFromCart,
     toggleWishlist,
     saveSearch,

@@ -3,11 +3,11 @@
    Dark Navy / Near-Black Palette + HTOO Gold Accent (#D4AF37)
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700;800&display=swap');
 
 html:lang(my) body,
 html:lang(my) .admin-shell {
-  font-family: 'Pyidaungsu', 'Manrope', sans-serif;
+  font-family: 'Noto Sans Myanmar', 'Pyidaungsu', 'Manrope', sans-serif;
 }
 
 :root {
@@ -69,10 +69,130 @@ html:lang(my) .admin-shell {
   background-color: var(--admin-bg);
 }
 
+html[data-admin-theme='light'] {
+  color-scheme: light;
+  --admin-bg: #f3f5f8;
+  --admin-sidebar-bg: #ffffff;
+  --admin-header-bg: #ffffff;
+  --admin-surface: #ffffff;
+  --admin-surface-card: #ffffff;
+  --admin-surface-hover: #f1f3f6;
+  --admin-surface-active: #f8f2df;
+  --admin-line: #dce1e8;
+  --admin-line-subtle: #e9edf2;
+  --admin-gold: #9a7510;
+  --admin-gold-hover: #795d08;
+  --admin-gold-soft: rgba(154, 117, 16, 0.1);
+  --admin-gold-border: rgba(154, 117, 16, 0.3);
+  --admin-gold-glow: rgba(154, 117, 16, 0.2);
+  --admin-text-primary: #1b2430;
+  --admin-text-secondary: #4b5563;
+  --admin-text-muted: #687386;
+  --admin-text-dim: #8791a0;
+  --shadow-sm: 0 2px 8px rgba(25, 35, 50, 0.08);
+  --shadow-card: 0 4px 20px rgba(25, 35, 50, 0.1);
+  --shadow-drawer: -4px 0 35px rgba(25, 35, 50, 0.16);
+  --shadow-modal: 0 20px 60px rgba(25, 35, 50, 0.2);
+}
+
 /* Reset & Global */
 .admin-shell, .admin-shell * {
   box-sizing: border-box;
 }
+
+body { margin: 0; min-width: 320px; background: var(--admin-bg); color: var(--admin-text-primary); font-family: 'Manrope', 'Pyidaungsu', sans-serif; }
+button, input { font: inherit; }
+
+.admin-loading,
+.admin-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 12% 10%, rgba(212, 175, 55, .09), transparent 38%), var(--admin-bg);
+  color: var(--admin-text-primary);
+}
+.admin-loading { font: 800 20px 'Manrope', sans-serif; color: var(--admin-gold); }
+.admin-login { position: relative; }
+.admin-login-language { position: absolute; top: 16px; right: 16px; }
+.login-panel {
+  width: min(440px, 100%);
+  padding: 40px;
+  border: 1px solid var(--admin-line);
+  border-radius: 16px;
+  background: var(--admin-surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+}
+.admin-mark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--admin-gold-border);
+  border-radius: 10px;
+  background: var(--admin-surface-hover);
+  color: var(--admin-gold);
+  font-size: 22px;
+  font-weight: 800;
+}
+.login-panel .admin-kicker {
+  margin: 22px 0 7px;
+  color: var(--admin-gold);
+  font: 500 10px 'DM Mono', monospace;
+  letter-spacing: .12em;
+}
+.login-panel h1 { margin: 0; font: 700 clamp(25px, 3vw, 32px) 'Playfair Display', Georgia, serif; }
+.admin-tagline { margin: 10px 0 24px; color: var(--admin-text-secondary); font-size: 13px; }
+.login-panel form { display: grid; gap: 16px; }
+.login-panel label { display: grid; gap: 7px; color: var(--admin-text-secondary); font-size: 12px; font-weight: 600; }
+.login-panel input {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: var(--admin-bg);
+  color: var(--admin-text-primary);
+}
+.login-panel input:focus-visible { outline: 2px solid var(--admin-gold); outline-offset: 1px; }
+.admin-password-field { position: relative; display: block; }
+.admin-password-field input { width: 100%; padding-right: 44px; }
+.admin-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--admin-text-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color .15s ease, background .15s ease;
+}
+.admin-password-toggle:hover { background: var(--admin-surface-hover); color: var(--admin-gold); }
+.admin-password-toggle:focus-visible { outline: 2px solid var(--admin-gold); outline-offset: 1px; }
+.admin-error {
+  padding: 9px 12px;
+  border: 1px solid rgba(239, 68, 68, .25);
+  border-radius: 7px;
+  background: rgba(239, 68, 68, .12);
+  color: #f87171;
+  font-size: 12px;
+}
+.login-panel .admin-primary {
+  margin-top: 2px;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #d4af37, #b89324);
+  color: var(--admin-bg);
+  font-size: 14px;
+  font-weight: 800;
+}
+.login-panel .admin-primary:hover { filter: brightness(1.08); }
 
 .admin-shell {
   min-height: 100vh;
@@ -138,7 +258,7 @@ html:lang(my) .admin-shell {
 /* Sidebar Brand */
 .sidebar-brand-box {
   height: 68px;
-  padding: 0 16px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -149,16 +269,38 @@ html:lang(my) .admin-shell {
 .brand-link {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   text-decoration: none;
   color: inherit;
 }
 
 .brand-mark-logo {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+/* The mark is pure white; in light mode the sidebar is white too, so give it a
+   dark tile of its own. Kept square so the letterform stays undistorted. */
+html[data-admin-theme='light'] .brand-mark-logo {
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  box-sizing: content-box;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #0b0f19;
+}
+
+.admin-sidebar.collapsed .sidebar-brand-box {
+  height: 68px;
+  justify-content: center;
+  padding: 0;
+}
+
+.admin-sidebar.collapsed .brand-link {
+  justify-content: center;
 }
 
 .brand-text-col {
@@ -169,11 +311,12 @@ html:lang(my) .admin-shell {
 
 .brand-title {
   font-family: 'Playfair Display', serif;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.05em;
   color: var(--admin-text-primary);
   line-height: 1.1;
+  white-space: nowrap;
 }
 
 .brand-badge {
@@ -648,6 +791,12 @@ html:lang(my) .admin-shell {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
+  flex-wrap: wrap;
+}
+
+.page-header-actions > div:first-child {
+  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .page-header-actions h2 {
@@ -1530,6 +1679,99 @@ html:lang(my) .admin-shell {
   border-color: var(--admin-gold-border);
 }
 
+/* ---------------- DATE RANGE FILTER ---------------- */
+.page-header-actions-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.order-details-print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.date-range-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px dashed var(--admin-line-subtle);
+  border-radius: var(--radius-md);
+}
+
+.date-range-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--admin-text-muted);
+  white-space: nowrap;
+}
+
+.date-range-field > span {
+  flex: 0 0 auto;
+  min-width: 1.1em;
+}
+
+.date-range-field .admin-select {
+  padding: 6px 8px;
+  font-size: 12px;
+  min-width: 132px;
+}
+
+.date-range-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--radius-sm);
+  color: var(--admin-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.date-range-clear:hover {
+  color: var(--admin-danger);
+  border-color: var(--admin-danger-border);
+  background-color: var(--admin-danger-soft);
+}
+
+.filter-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-line);
+  font-size: 12.5px;
+  color: var(--admin-text-muted);
+}
+
+.filter-summary strong {
+  color: var(--admin-text-primary);
+}
+
+.filter-summary-range {
+  color: var(--admin-gold);
+  font-weight: 600;
+}
+
 .bulk-action-bar {
   display: flex;
   align-items: center;
@@ -1752,8 +1994,33 @@ html:lang(my) .admin-shell {
   animation: drawerSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.customer-drawer-overlay {
+  padding: 0;
+}
+
+.customer-detail-drawer {
+  width: 100%;
+  border-left: 0;
+}
+
+.product-detail-overlay {
+  padding: 0;
+}
+
+.product-detail-drawer {
+  left: 0;
+  width: 100%;
+  border-left: 0;
+}
+
 .order-drawer-wide {
-  width: min(620px, 100%);
+  left: 0;
+  width: auto;
+  border-left: 0;
+}
+
+.order-detail-overlay {
+  padding: 0;
 }
 
 @keyframes drawerSlide {
@@ -2274,6 +2541,7 @@ html:lang(my) .admin-shell {
 /* Order Details Drawer Specifics */
 .order-quick-status-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2281,6 +2549,30 @@ html:lang(my) .admin-shell {
   background-color: var(--admin-surface);
   border: 1px solid var(--admin-line);
   border-radius: var(--radius-md);
+}
+
+.order-current-status {
+  display: grid;
+  min-width: 180px;
+  gap: 3px;
+}
+
+.order-current-status > span {
+  color: var(--admin-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.order-current-status > strong {
+  color: var(--admin-text-primary);
+  font-size: 15px;
+}
+
+.order-current-status > small {
+  color: var(--admin-text-muted);
+  font-size: 11px;
 }
 
 .status-action-btns {
@@ -2301,6 +2593,412 @@ html:lang(my) .admin-shell {
   cursor: pointer;
 }
 
+.status-btn-choice:focus-visible {
+  outline: 2px solid var(--admin-gold);
+  outline-offset: 2px;
+}
+
+.status-btn-primary {
+  border-color: var(--admin-gold);
+  background: var(--admin-gold);
+  color: #0b0f19;
+}
+
+.status-btn-primary:hover {
+  background: var(--admin-gold-hover);
+}
+
+.status-btn-danger {
+  border-color: var(--admin-danger-border);
+  background: var(--admin-danger-soft);
+  color: var(--admin-danger);
+}
+
+.status-btn-danger:hover {
+  border-color: var(--admin-danger);
+  background: var(--admin-danger);
+  color: #fff;
+}
+
+.order-workflow {
+  margin: 14px 0 20px;
+  padding: 16px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--radius-md);
+  background: var(--admin-surface-card);
+}
+
+.order-workflow-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-workflow-heading strong {
+  color: var(--admin-text-primary);
+  font-size: 13px;
+}
+
+.order-workflow-heading > span {
+  color: var(--admin-gold);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.order-workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.order-workflow-step {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--admin-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.order-workflow-step:not(:last-child)::after {
+  position: absolute;
+  z-index: -1;
+  top: 13px;
+  left: calc(50% + 14px);
+  width: calc(100% - 28px);
+  height: 2px;
+  background: var(--admin-line);
+  content: '';
+}
+
+.order-workflow-step.completed:not(:last-child)::after {
+  background: var(--admin-gold);
+}
+
+.order-workflow-step-indicator {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--admin-line);
+  border-radius: 50%;
+  background: var(--admin-surface);
+  color: var(--admin-text-muted);
+  font-size: 11px;
+}
+
+.order-workflow-step.current {
+  color: var(--admin-gold);
+}
+
+.order-workflow-step.current .order-workflow-step-indicator,
+.order-workflow-step.completed .order-workflow-step-indicator {
+  border-color: var(--admin-gold);
+  background: var(--admin-gold);
+  color: #0b0f19;
+}
+
+.order-workflow-cancelled {
+  margin: 14px 0 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--admin-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--admin-danger-soft);
+  color: var(--admin-danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.order-voucher {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--radius-md);
+  background: var(--admin-surface);
+  color: var(--admin-text-primary);
+}
+
+.order-voucher-editor {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--radius-md);
+  background: var(--admin-surface-card);
+}
+
+.order-voucher-editor > h3 {
+  margin: 0;
+  color: var(--admin-text-primary);
+  font-size: 14px;
+}
+
+.order-voucher-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.order-voucher-editor .form-group {
+  min-width: 0;
+}
+
+.order-voucher-editor input,
+.order-voucher-editor select {
+  width: 100%;
+  min-width: 0;
+}
+
+.order-voucher-live-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-line);
+  color: var(--admin-text-secondary);
+  font-size: 12px;
+}
+
+.order-voucher-live-total strong {
+  color: var(--admin-gold);
+  font-size: 15px;
+}
+
+.order-voucher-error {
+  margin: 0;
+  color: var(--admin-danger);
+  font-size: 11px;
+}
+
+.order-voucher-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--admin-gold);
+}
+
+.order-voucher-header > div > span {
+  color: var(--admin-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.order-voucher-header h2 {
+  margin: 4px 0 0;
+  color: var(--admin-text-primary);
+  font-size: 25px;
+  overflow-wrap: anywhere;
+}
+
+.order-voucher-logo {
+  grid-column: 2;
+  grid-row: 1;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+/* Printed on the receipt only (date · status · delivery method). */
+.order-voucher-print-meta {
+  display: none;
+  margin: 2px 0 0;
+  color: #374151 !important;
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
+.order-voucher-header-details {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.order-voucher-address-block,
+.order-voucher-customer-block {
+  min-width: 0;
+}
+
+.order-voucher h3 {
+  margin: 0 0 7px;
+  color: var(--admin-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.order-voucher-address-block address,
+.order-voucher-customer-block p {
+  margin: 0;
+  color: var(--admin-text-primary);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.order-voucher-address-block address span {
+  display: block;
+}
+
+.order-voucher-customer-block p + p {
+  margin-top: 2px;
+}
+
+.order-voucher-customer-block {
+  grid-column: 2;
+  text-align: center;
+}
+
+.order-voucher-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.order-voucher-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.order-voucher-table th,
+.order-voucher-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--admin-line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.order-voucher-table th {
+  background: var(--admin-surface-hover);
+  color: var(--admin-text-secondary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.order-voucher-table td:nth-child(3),
+.order-voucher-table td:nth-child(4),
+.order-voucher-table td:nth-child(5) {
+  white-space: nowrap;
+}
+
+.order-voucher-summary {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.order-voucher-financials {
+  display: grid;
+  width: min(100%, 320px);
+  align-content: start;
+  gap: 8px;
+}
+
+.order-voucher-financials > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--admin-text-secondary);
+  font-size: 11px;
+}
+
+.order-voucher-financials > div strong {
+  color: var(--admin-text-primary);
+  text-align: right;
+}
+
+.order-voucher-financials > .order-voucher-grand-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-line);
+  color: var(--admin-text-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.order-voucher-financials > .order-voucher-grand-total strong {
+  color: var(--admin-gold);
+  font-size: 16px;
+}
+
+.drawer-footer .order-voucher-print-button {
+  margin-left: auto;
+}
+
+@media (max-width: 540px) {
+  .order-voucher {
+    padding: 14px 10px;
+  }
+
+  .order-voucher-header {
+    grid-template-columns: 1fr;
+  }
+
+  .order-voucher-header-details {
+    grid-template-columns: 1fr;
+  }
+
+  .order-voucher-customer-block {
+    grid-column: auto;
+  }
+
+  .order-voucher-editor-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .order-workflow {
+    padding: 12px 8px;
+  }
+
+  .order-workflow-step {
+    font-size: 9px;
+    overflow-wrap: anywhere;
+  }
+
+  .order-workflow-step-indicator {
+    width: 24px;
+    height: 24px;
+  }
+
+  .order-workflow-step:not(:last-child)::after {
+    top: 11px;
+    left: calc(50% + 12px);
+    width: calc(100% - 24px);
+  }
+
+  .order-voucher {
+    padding: 14px 10px;
+  }
+
+  .order-voucher-recipient,
+  .order-voucher-content {
+    grid-template-columns: 1fr;
+  }
+
+  .order-voucher-editor-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .status-btn-choice.active {
   background-color: var(--admin-gold);
   color: #0b0f19;
@@ -2311,6 +3009,24 @@ html:lang(my) .admin-shell {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.order-details-table-wrap {
+  border: 1px solid var(--admin-line);
+}
+
+.order-details-table th {
+  white-space: nowrap;
+}
+
+.order-details-table td {
+  vertical-align: middle;
+}
+
+.order-details-table th.order-details-num,
+.order-details-table td.order-details-num {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .drawer-product-row {
@@ -2630,5 +3346,324 @@ html:lang(my) .admin-shell {
   }
   .breadcrumb-trail {
     display: none;
+  }
+}
+
+/*
+  Delivery voucher print sheet — one half-page receipt (thermal 80mm or A5).
+  Printed from the Orders drawer: body is hidden, the drawer collapses to the
+  voucher only, and everything is scaled down so a full order always fits on a
+  single page. Promotional copy, the drawer chrome, the toolbar and the gray
+  page footer are all suppressed here.
+*/
+@media print {
+  @page {
+    size: A5 portrait;
+    margin: 6mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  /* Hide the whole admin shell, then reveal the voucher below. */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Kill page-height boxes so no blank second page is generated. */
+  .admin-shell,
+  .admin-layer,
+  .grid-background,
+  .admin-page-content,
+  .admin-main {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  /* Hide every element of the page except the voucher subtree. */
+  body *:not(:has(.order-voucher)):not(.order-voucher):not(.order-voucher *) {
+    display: none !important;
+  }
+
+  .order-detail-overlay {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    backdrop-filter: none !important;
+  }
+
+  .order-detail-overlay .order-drawer-wide {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    animation: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  /* Drawer chrome, workflow bars, editor, modal footers: never printed. */
+  .order-detail-overlay .drawer-header,
+  .order-detail-overlay .drawer-footer,
+  .order-detail-overlay .drawer-body > :not(.order-voucher),
+  .order-detail-overlay .order-voucher-editor,
+  .order-detail-overlay .order-quick-status-bar,
+  .order-detail-overlay .order-workflow,
+  .order-detail-overlay .order-workflow-cancelled {
+    display: none !important;
+  }
+
+  .order-detail-overlay .drawer-body {
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    background: #fff !important;
+  }
+
+  /* The receipt itself: flat, borderless, single column, no page breaks. */
+  .order-voucher,
+  .order-voucher * {
+    visibility: visible !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .order-voucher {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  /* ---- header / customer blocks ---- */
+  .order-voucher-header {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 6px !important;
+    padding: 0 0 4px !important;
+    margin: 0 0 6px !important;
+    border-bottom: 1px solid #987517 !important;
+    break-inside: avoid;
+  }
+
+  .order-voucher-header > div > span {
+    display: block;
+    color: #4b5563 !important;
+    font-size: 8px !important;
+    letter-spacing: .06em !important;
+  }
+
+  .order-voucher-header h2 {
+    margin: 0 !important;
+    color: #111 !important;
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .order-voucher-print-meta {
+    display: block !important;
+  }
+
+  .order-voucher-logo {
+    width: 24px !important;
+    height: 24px !important;
+  }
+
+  .order-voucher-header-details {
+    display: grid !important;
+    grid-column: 1 / -1 !important;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    margin-top: 4px !important;
+  }
+
+  .order-voucher-address-block,
+  .order-voucher-customer-block {
+    min-width: 0 !important;
+    break-inside: avoid;
+  }
+
+  .order-voucher-customer-block {
+    grid-column: auto !important;
+    text-align: left !important;
+  }
+
+  .order-voucher h3 {
+    margin: 0 0 2px !important;
+    color: #4b5563 !important;
+    font-size: 7.5px !important;
+    letter-spacing: .06em !important;
+  }
+
+  .order-voucher-address-block address,
+  .order-voucher-customer-block p {
+    margin: 0 !important;
+    color: #111 !important;
+    font-size: 9.5px !important;
+    line-height: 1.3 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .order-voucher-address-block address span {
+    display: inline !important;
+  }
+
+  .order-voucher-address-block address span + span::before {
+    content: ", ";
+  }
+
+  /* ---- items table ---- */
+  .order-voucher-table-wrap {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+  }
+
+  .order-voucher-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 9px !important;
+  }
+
+  .order-voucher-table thead {
+    display: table-header-group;
+  }
+
+  .order-voucher-table th,
+  .order-voucher-table td {
+    padding: 2.5px 3px !important;
+    border: 1px solid #b9c0ca !important;
+    color: #111 !important;
+    font-size: 9px !important;
+    line-height: 1.25 !important;
+    white-space: normal !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .order-voucher-table th {
+    background: #eef0f3 !important;
+    color: #222 !important;
+    font-size: 7px !important;
+    letter-spacing: .02em !important;
+  }
+
+  /* Keep price / qty / total narrow and right-aligned so names wrap. */
+  .order-voucher-table th:nth-child(1),
+  .order-voucher-table td:nth-child(1) { width: 40% !important; }
+  .order-voucher-table th:nth-child(2),
+  .order-voucher-table td:nth-child(2) { width: 27% !important; }
+  .order-voucher-table th:nth-child(3),
+  .order-voucher-table td:nth-child(3) { width: 11% !important; text-align: right !important; }
+  .order-voucher-table th:nth-child(4),
+  .order-voucher-table td:nth-child(4) { width: 7% !important; text-align: center !important; }
+  .order-voucher-table th:nth-child(5),
+  .order-voucher-table td:nth-child(5) { width: 15% !important; text-align: right !important; }
+
+  .order-voucher-table td:nth-child(3),
+  .order-voucher-table td:nth-child(4),
+  .order-voucher-table td:nth-child(5) {
+    white-space: nowrap !important;
+  }
+
+  /* Long orders: shrink rows to stay inside the half page, never paginate. */
+  .order-voucher-table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .order-voucher-table tbody tr:nth-child(n+9) td {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+    font-size: 8.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  .order-voucher-table tbody tr:nth-child(n+15) td {
+    font-size: 8px !important;
+  }
+
+  /* ---- totals ---- */
+  .order-voucher-summary {
+    display: block !important;
+    margin: 4px 0 0 !important;
+    padding: 0 !important;
+    break-inside: avoid;
+  }
+
+  .order-voucher-financials {
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 1.5px !important;
+    break-inside: avoid;
+  }
+
+  .order-voucher-financials > div {
+    gap: 8px !important;
+    color: #111 !important;
+    font-size: 9px !important;
+    line-height: 1.3 !important;
+  }
+
+  .order-voucher-financials > div strong {
+    color: #111 !important;
+    font-size: 9px !important;
+  }
+
+  .order-voucher-financials > .order-voucher-grand-total {
+    margin-top: 2px !important;
+    padding-top: 3px !important;
+    border-top: 1px solid #987517 !important;
+    color: #111 !important;
+    font-size: 10.5px !important;
+  }
+
+  .order-voucher-financials > .order-voucher-grand-total strong {
+    color: #72560a !important;
+    font-size: 11.5px !important;
   }
 }

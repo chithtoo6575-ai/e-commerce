@@ -11,6 +11,7 @@ import {
   IconX
 } from '../AdminIcons'
 import { getVariantStockOptions } from '../../lib/productVariants'
+import { adminFetch } from '../../adminApi'
 
 const formatMoney = (val) => `Ks ${Math.round(val || 0).toLocaleString('en-US')}`
 
@@ -597,7 +598,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     // If a new local image was selected, upload it through the API to get a persistent server URL
     if (selectedFile && previewUrl?.startsWith('data:image/')) {
       try {
-        const uploadRes = await fetch('/api/admin/upload', {
+        const uploadRes = await adminFetch('/api/admin/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -969,8 +970,8 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
 // ---------------- Product Detail Drawer Component ----------------
 function ProductDetailDrawer({ product, onClose, onEdit }) {
   return (
-    <div className="admin-drawer-overlay" onClick={onClose}>
-      <div className="admin-drawer" onClick={(e) => e.stopPropagation()}>
+    <div className="admin-drawer-overlay product-detail-overlay" onClick={onClose}>
+      <div className="admin-drawer product-detail-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-header">
           <div>
             <h3>{adminT("Product Overview")}</h3>

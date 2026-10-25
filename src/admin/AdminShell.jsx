@@ -3,6 +3,8 @@ import './AdminTheme.css'
 import ToastContainer from './components/Toast'
 import {
   IconSearch,
+  IconSun,
+  IconMoon,
   IconSidebarCollapse,
   IconSidebarExpand,
   IconLogout,
@@ -12,6 +14,7 @@ import {
   IconNotifications
 } from './AdminIcons'
 import { NAV_STRUCTURE } from './navStructure'
+import { adminFetch } from '../adminApi'
 
 import DashboardPage from './pages/DashboardPage'
 import ProductsPage from './pages/ProductsPage'
@@ -22,6 +25,7 @@ import BannerImagesPage from './pages/BannerImagesPage'
 import HomeSectionsPage from './pages/HomeSectionsPage'
 import HomeLayoutPage from './pages/HomeLayoutPage'
 import OrdersPage from './pages/OrdersPage'
+import OrderDetailsPage from './pages/OrderDetailsPage'
 import ShippingRatesPage from './pages/ShippingRatesPage'
 import DeliveryCompaniesPage from './pages/DeliveryCompaniesPage'
 import PaymentMethodsPage from './pages/PaymentMethodsPage'
@@ -32,6 +36,20 @@ import HelpItemsPage from './pages/HelpItemsPage'
 
 import { adminStore } from './adminStore'
 import { adminT, AdminLanguageSelector } from './adminI18n'
+import { getAdminPath, getAdminUrl } from './adminRouter'
+
+function mapPaymentAccounts(payments) {
+  return Object.values(payments).map((payment, index) => ({
+    ...payment,
+    icon: payment.type === 'cash' ? '💵' : payment.type === 'bank' ? '🏦' : '📱',
+    description: payment.type === 'cash' ? 'Pay on delivery' : payment.type === 'bank' ? payment.bankName || 'Bank transfer' : 'Mobile wallet',
+    instructions: payment.type === 'cash'
+      ? 'Cash payment on delivery'
+      : [payment.accountName, payment.bankName, payment.accountNumber || payment.phoneNumber].filter(Boolean).join(' · '),
+    status: payment.enabled === true ? 'Active' : 'Inactive',
+    sortOrder: Number.isInteger(payment.sortOrder) ? payment.sortOrder : index + 1
+  })).sort((a, b) => a.sortOrder - b.sortOrder)
+}
 
 export default function AdminShell({
   auth,
@@ -49,7 +67,7 @@ export default function AdminShell({
 }) {
   // Determine active tab from URL path
   const getTabFromPath = () => {
-    const path = window.location.pathname.toLowerCase()
+    const path = getAdminPath().toLowerCase()
     for (const group of NAV_STRUCTURE) {
       for (const item of group.items) {
         if (path === item.path || (item.path === '/admin' && (path === '/admin/' || path === '/admin/dashboard'))) {
@@ -67,6 +85,17 @@ export default function AdminShell({
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
   const [headerSearch, setHeaderSearch] = useState('')
   const [selectedOrderForDrawer, setSelectedOrderForDrawer] = useState(null)
+  // Reset the drawer hand-off after it is consumed, so returning to Orders from the
+  // sidebar does not immediately reopen an order opened from အော်ဒါအသေးစိတ်.
+  const [autoOpenOrder, setAutoOpenOrder] = useState(null)
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('htoo_admin_theme') === 'light' ? 'light' : 'dark'
+    } catch (storageError) {
+      console.warn('[AdminShell] Could not read the dashboard theme preference:', storageError)
+      return 'dark'
+    }
+  })
 
   // Toast Notifications system
   const [toasts, setToasts] = useState([])
@@ -91,6 +120,24 @@ export default function AdminShell({
   const [supportChannels, setSupportChannels] = useState(() => adminStore.getSupportChannels())
   const [helpItems, setHelpItems] = useState(() => adminStore.getHelpItems())
 
+  useEffect(() => {
+    let active = true
+    adminFetch('/api/admin/payments')
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to load payment methods.')
+        if (!result.payments || typeof result.payments !== 'object' || Array.isArray(result.payments)) {
+          throw new Error('The payment methods API returned invalid data.')
+        }
+        if (active) setPaymentMethods(mapPaymentAccounts(result.payments))
+      })
+      .catch((paymentError) => {
+        console.error('[AdminShell] Could not load payment methods:', paymentError)
+        if (active) showToast(paymentError.message || 'Unable to load payment methods.', 'error')
+      })
+    return () => { active = false }
+  }, [])
+
   const stockMovements = useMemo(() => {
     const serverMovements = Array.isArray(data?.stockMovements) ? data.stockMovements : []
     const serverIds = new Set(serverMovements.map((movement) => movement.id))
@@ -106,9 +153,57 @@ export default function AdminShell({
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
+  useEffect(() => {
+    document.documentElement.dataset.adminTheme = theme
+    try {
+      localStorage.setItem('htoo_admin_theme', theme)
+    } catch (storageError) {
+      console.warn('[AdminShell] Could not save the dashboard theme preference:', storageError)
+    }
+  }, [theme])
+
+  // Sync support channels from the server, which is what the storefront Help page reads.
+  useEffect(() => {
+    let active = true
+    adminFetch('/api/admin/support-channels')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data) return
+        if (!Array.isArray(data.channels)) return
+        adminStore.saveSupportChannels(data.channels)
+        setSupportChannels(data.channels)
+      })
+      .catch((channelError) => {
+        console.warn('[AdminShell] Could not load support channels from the server:', channelError)
+      })
+    return () => { active = false }
+  }, [])
+
+  const saveSupportChannels = async (updated) => {
+    try {
+      const response = await adminFetch('/api/admin/support-channels', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels: updated })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to save support channels.')
+      const saved = Array.isArray(result.channels) ? result.channels : updated
+      adminStore.saveSupportChannels(saved)
+      setSupportChannels(saved)
+      showToast('Support channels published to the Help page.', 'success')
+    } catch (channelError) {
+      // Keep the admin's edit locally so it is not lost, and surface the failure.
+      console.error('[AdminShell] Could not save support channels:', channelError)
+      adminStore.saveSupportChannels(updated)
+      setSupportChannels(updated)
+      showToast(channelError.message || 'Unable to save support channels.', 'error')
+    }
+  }
+
   // Sync banners from server
   useEffect(() => {
-    fetch('/api/admin/banners')
+    adminFetch('/api/admin/banners')
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data && Array.isArray(data.banners) && data.banners.length) {
@@ -122,6 +217,8 @@ export default function AdminShell({
   // Navigate helper that updates URL cleanly
   const navigateTo = (tabId) => {
     setActiveTab(tabId)
+    setAutoOpenOrder(null)
+    setSelectedOrderForDrawer(null)
     setMobileMenuOpen(false)
     setProfileDropdownOpen(false)
     setNotifDropdownOpen(false)
@@ -135,7 +232,7 @@ export default function AdminShell({
       }
     }
     if (window.location.pathname !== targetPath) {
-      window.history.pushState(null, '', targetPath)
+      window.history.pushState(null, '', getAdminUrl(targetPath))
     }
   }
 
@@ -166,6 +263,71 @@ export default function AdminShell({
     await onAddStockMovement(movement)
   }
 
+  const handleSavePaymentMethods = async (methods) => {
+    const response = await adminFetch('/api/admin/payments', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        methods: methods.map(({ id, status, sortOrder }) => ({ id, status, sortOrder }))
+      })
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to update payment methods.')
+    if (!result.payments || typeof result.payments !== 'object' || Array.isArray(result.payments)) {
+      throw new Error('The payment methods API returned invalid data.')
+    }
+    const updated = mapPaymentAccounts(result.payments)
+    setPaymentMethods(updated)
+    return updated
+  }
+
+  const handleCreatePaymentMethod = async (method) => {
+    const response = await adminFetch('/api/admin/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(method)
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to add payment method.')
+    if (!result.payment || typeof result.payment !== 'object' || Array.isArray(result.payment)) {
+      throw new Error('The payment methods API returned invalid data.')
+    }
+    setPaymentMethods((current) => {
+      const payments = Object.fromEntries(current.map((item) => [item.id, item]))
+      payments[result.payment.id] = result.payment
+      return mapPaymentAccounts(payments)
+    })
+    return result.payment
+  }
+
+  const handleUpdatePaymentMethod = async (method) => {
+    const { id, ...changes } = method
+    const response = await adminFetch(`/api/admin/payments/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes)
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to update payment method.')
+    if (!result.payment || typeof result.payment !== 'object' || Array.isArray(result.payment)) {
+      throw new Error('The payment methods API returned invalid data.')
+    }
+    setPaymentMethods((current) => {
+      const payments = Object.fromEntries(current.map((item) => [item.id, item]))
+      payments[result.payment.id] = result.payment
+      return mapPaymentAccounts(payments)
+    })
+    return result.payment
+  }
+
+  const handleDeletePaymentMethod = async (id) => {
+    const response = await adminFetch(`/api/admin/payments/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to delete payment method.')
+    if (result.id !== id) throw new Error('The payment methods API returned invalid data.')
+    setPaymentMethods((current) => current.filter((method) => method.id !== id))
+  }
+
   const orders = data?.orders || []
   const products = data?.products || []
   const categories = data?.categories || []
@@ -185,13 +347,11 @@ export default function AdminShell({
             className="brand-link"
             onClick={(e) => { e.preventDefault(); navigateTo('Dashboard') }}
           >
-            <img className="brand-mark-logo" src="/logo.svg" alt="" />
-            {!sidebarCollapsed && (
-              <div className="brand-text-col">
-                <span className="brand-title">{adminT("HTOO")}</span>
-                <span className="brand-badge">{adminT("Luxury Atelier")}</span>
-              </div>
-            )}
+            <img
+              className="brand-mark-logo"
+              src={`${import.meta.env.BASE_URL}logo-white.svg`}
+              alt={adminT("H logo")}
+            />
           </a>
           <button
             className="sidebar-collapse-toggle"
@@ -290,6 +450,15 @@ export default function AdminShell({
 
           <div className="header-tools">
             <AdminLanguageSelector language={language} onChange={onLanguageChange} />
+            <button
+              className="header-icon-action theme-toggle-button"
+              type="button"
+              aria-label={adminT(theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', language)}
+              title={adminT(theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', language)}
+              onClick={() => setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <IconSun size={17} /> : <IconMoon size={17} />}
+            </button>
             {/* Global Search */}
             <div className="header-search-wrap">
               <IconSearch size={15} className="header-search-icon" />
@@ -402,8 +571,9 @@ export default function AdminShell({
               data={data}
               onNavigate={navigateTo}
               onOpenOrder={(order) => {
-                setSelectedOrderForDrawer(order)
+                // navigateTo clears both hand-off states, so queue it afterwards.
                 navigateTo('Orders')
+                setAutoOpenOrder(order)
               }}
               onOpenProductModal={() => {
                 navigateTo('Products')
@@ -475,7 +645,7 @@ export default function AdminShell({
                 adminStore.saveBanners(updated)
                 setBanners(updated)
                 try {
-                  await fetch('/api/admin/banners', {
+                  await adminFetch('/api/admin/banners', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(saved)
@@ -489,7 +659,7 @@ export default function AdminShell({
                 adminStore.saveBanners(updated)
                 setBanners(updated)
                 try {
-                  await fetch(`/api/admin/banners/${encodeURIComponent(id)}`, { method: 'DELETE' })
+                  await adminFetch(`/api/admin/banners/${encodeURIComponent(id)}`, { method: 'DELETE' })
                 } catch (err) {
                   console.warn('[AdminShell] Failed to delete banner from API:', err)
                 }
@@ -526,7 +696,16 @@ export default function AdminShell({
               orders={orders}
               onUpdateOrder={onUpdateOrder}
               onRefreshOrders={onRefreshOrders}
-              selectedOrderFromNav={selectedOrderForDrawer}
+              selectedOrderFromNav={selectedOrderForDrawer || autoOpenOrder}
+              showToast={showToast}
+            />
+          )}
+
+          {activeTab === 'အော်ဒါအသေးစိတ်' && (
+            <OrderDetailsPage
+              orders={orders}
+              onUpdateOrder={onUpdateOrder}
+              onRefreshOrders={onRefreshOrders}
               showToast={showToast}
             />
           )}
@@ -556,10 +735,10 @@ export default function AdminShell({
           {activeTab === 'Payment Methods' && (
             <PaymentMethodsPage
               methods={paymentMethods}
-              onSaveMethods={(updated) => {
-                adminStore.savePaymentMethods(updated)
-                setPaymentMethods(updated)
-              }}
+              onSaveMethods={handleSavePaymentMethods}
+              onAddMethod={handleCreatePaymentMethod}
+              onUpdateMethod={handleUpdatePaymentMethod}
+              onDeleteMethod={handleDeletePaymentMethod}
               showToast={showToast}
             />
           )}
@@ -587,10 +766,7 @@ export default function AdminShell({
           {activeTab === 'Support Channels' && (
             <SupportChannelsPage
               channels={supportChannels}
-              onSaveChannels={(updated) => {
-                adminStore.saveSupportChannels(updated)
-                setSupportChannels(updated)
-              }}
+              onSaveChannels={saveSupportChannels}
               showToast={showToast}
             />
           )}

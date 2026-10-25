@@ -8,6 +8,7 @@ import {
   IconHomeSections,
   IconHomeLayout,
   IconOrders,
+  IconOrderDetails,
   IconShippingRates,
   IconDeliveryCompanies,
   IconPaymentMethods,
@@ -46,6 +47,7 @@ export const NAV_STRUCTURE = [
     group: 'SALES',
     items: [
       { id: 'Orders', label: 'Orders', path: '/admin/orders', icon: IconOrders },
+      { id: 'အော်ဒါအသေးစိတ်', label: 'Order Details', path: '/admin/order-details', icon: IconOrderDetails },
       { id: 'Shipping Rates', label: 'Shipping Rates', path: '/admin/shipping-rates', icon: IconShippingRates },
       { id: 'Delivery Companies', label: 'Delivery Companies', path: '/admin/delivery-companies', icon: IconDeliveryCompanies },
       { id: 'Payment Methods', label: 'Payment Methods', path: '/admin/payment-methods', icon: IconPaymentMethods }
