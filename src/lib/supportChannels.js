@@ -1,7 +1,5 @@
-// Customer-facing support channels.
-// The admin configures these in Dashboard → Support Channels (persisted by
-// /api/admin/support-channels). The storefront reads the public, active-only
-// /api/support-channels endpoint so customers always see the live list.
+// Customer-facing active channels are queried directly from Supabase under RLS.
+// Administrative writes belong to an authenticated server-side/admin data layer.
 
 const CHANNEL_ICONS = {
   Facebook: '📘',
@@ -73,22 +71,15 @@ export function mergeSupportChannels(remoteChannels, localChannels = []) {
   return merged.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
 }
 
-// The API is served behind the same origin on localhost and from its own host
-// in production, so an absolute URL (localStorage key `htoo_api_base`) wins when
-// the storefront is opened from a different origin (Telegram/bot previews).
-function supportApiBase() {
-  try {
-    return String(localStorage.getItem('htoo_api_base') || '').replace(/\/$/, '')
-  } catch {
-    return ''
-  }
-}
+import { shopData } from './supabase.js'
 
-export async function fetchSupportChannels(signal, baseUrl = supportApiBase()) {
-  const response = await fetch(`${baseUrl}/api/support-channels`, { signal })
-  const result = await response.json().catch(() => ({}))
-  if (!response.ok || !Array.isArray(result.channels)) {
-    throw new Error(result.error || 'Unable to load support channels.')
-  }
-  return result.channels
+export async function fetchSupportChannels(signal) {
+  const channels = await shopData.getSupportChannels()
+  if (signal?.aborted) throw new DOMException('Request aborted.', 'AbortError')
+  return (channels || []).map((channel) => ({
+    ...channel,
+    channel: channel.channel,
+    status: channel.enabled ? 'Active' : 'Inactive',
+    sortOrder: channel.sort_order,
+  }))
 }

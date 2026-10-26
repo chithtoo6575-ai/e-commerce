@@ -1,6 +1,32 @@
 # Atelier Market
 
-Multi-purpose e-commerce storefront for fashion, phone accessories, and grocery sellers. The current MVP is a responsive React + Vite storefront with category filtering, search, saved items, and a working cart drawer.
+Responsive React + Vite storefront for fashion, phone accessories, and grocery sellers. The frontend now has a Supabase browser data adapter and a normalized PostgreSQL/RLS migration foundation. The existing legacy Node/SQLite API and admin interface are still present for compatibility; the application has not completed a full migration of checkout, admin, all account flows, Telegram, or payment integrations.
+
+## Supabase + Vercel migration (new)
+
+The `/api/*` routes were not provided by GitHub Pages: Pages serves static files only. The former Vite `/api` proxy was a local-development proxy to `server.js`, not a production backend. New catalog, settings, banners, promotions, support-channel reads, and basic email/password account calls are defined in `src/lib/supabase.js`; RLS limits database visibility. Missing Supabase configuration is surfaced instead of calling fictitious same-origin API routes. Remaining legacy `/api`-backed features are not production-ready.
+
+### Local setup
+1. Create a Supabase project and put its project URL and publishable/anon key in `.env` (never use a service-role key in `VITE_*`). `.env.example` contains placeholders only.
+2. Install/configure Supabase CLI, link the project (`supabase link --project-ref <project-ref>`), then apply `supabase/migrations/202610260001_initial_schema.sql` with `supabase db push` (or review and run it using the SQL Editor).
+3. In Supabase **Authentication → URL Configuration**, add `http://localhost:5173` and your production URL to allowed redirects. Configure email confirmation and password recovery delivery.
+4. Run `npm run dev`. The Vite `/api` proxy remains only for legacy local backend features; the Supabase adapter uses the explicit project URL.
+5. Grant the first administrator a row in `public.user_roles` from the trusted SQL Editor. Never expose service-role credentials or accept browser-supplied role claims.
+
+### Order-processing boundary status
+A `create-order` Edge Function template and SQL transaction function are included, but the existing checkout has not yet been switched to them. The function currently rejects guest checkout and deliberately sets shipping and discount values to zero; shipping/promotion business logic must be completed in trusted database logic before launch. Review and test all SQL in staging. No payment provider is integrated; old UI payment slips/COD are not verified payment processing. Do not accept online payment until a provider webhook is verified server-side.
+
+### Deploy to Vercel
+1. Import the repository into Vercel and set Vite framework, build command `npm run build`, output directory `dist` (also configured in `vercel.json`).
+2. Add Production and Preview environment variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable/anon only), then redeploy.
+3. Set the Vercel domain as Supabase Auth Site URL and add exact production/preview redirect URLs.
+4. Apply the migration, test RLS with anon/authenticated users, securely grant initial admin access, and deploy reviewed Edge Functions. Set Edge Function secret `ALLOWED_ORIGINS` to exact allowed origin(s). Never put service role keys in the frontend.
+5. Connect GitHub for automatic deployment and stop using GitHub Pages for production. The existing Pages workflow has not been removed.
+
+### Production gaps
+The schema/policies and Supabase adapter are local templates; no remote database has been configured. Product/admin CRUD, customer carts/orders, persistent addresses, the full account/session UI and remaining admin/payment features still have legacy API calls. Checkout isn't migrated; the SQL order function is an initial atomic-stock design and must receive staging security/integration tests. Complete these migrations and tests before taking real orders.
+
+Required public variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Copy `.env.example` to `.env` locally and insert real public project values; never store privileged credentials in the frontend.
 
 ## Run locally
 

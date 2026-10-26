@@ -8,6 +8,7 @@ import DesktopApp from './DesktopApp'
 import MobileApp from './MobileApp'
 import { adminStore } from './admin/adminStore'
 import { fetchSupportChannels, mergeSupportChannels } from './lib/supportChannels'
+import { shopData, supabase, supabaseConfigured } from './lib/supabase'
 
 const GUEST_CART_KEY = 'atelier_guest_cart'
 const GUEST_WISHLIST_KEY = 'atelier_guest_wishlist'
@@ -403,6 +404,23 @@ export default function App() {
   }, [checkoutForm, checkoutStep])
 
   useEffect(() => {
+    if (!supabaseConfigured) {
+      setCatalogStatus('error')
+      setError('Connect Supabase to load live products and sign in securely.')
+      return
+    }
+    let active = true
+    const restoreCustomer = async () => {
+      const profile = await shopData.getProfile()
+      if (active && profile) {
+        setUser({ id: profile.id, name: profile.full_name, phone: profile.phone, email: profile.email, languagePreference: profile.language_preference })
+        setRoute({ page: 'main' })
+      }
+    }
+    restoreCustomer().catch((restoreError) => console.error('[auth] Session restoration failed.', restoreError))
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) setUser(null)
+    })
     const telegramWebApp = window.Telegram?.WebApp
     const telegramInitData = telegramWebApp?.initData || ''
     telegramWebApp?.ready()
@@ -418,68 +436,19 @@ export default function App() {
       if (!response.ok) throw new Error(result.error || 'Unable to link this Telegram account.')
     }
 
-    fetch('/api/customer/session')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('session')))
-      .then(async (data) => {
-        if (data.customer) {
-          setUser(data.customer)
-          setRoute({ page: 'main' })
-          if (telegramInitData) {
-            try { await linkTelegramAccount() } catch (linkError) { setError(linkError.message) }
-          }
-          return
-        }
-        if (telegramInitData) {
-          const response = await fetch('/api/telegram/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData: telegramInitData })
-          })
-          const result = await response.json()
-          if (!response.ok) throw new Error(result.error || 'Unable to authenticate your Telegram account.')
-          setUser(result.customer)
-          setRoute({ page: 'main' })
-        }
-      })
-      .catch((sessionError) => { if (telegramInitData) setError(sessionError.message || 'Unable to authenticate your Telegram account.') })
-
-    fetch('/api/products')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('products')))
-      .then((data) => {
-        if (Array.isArray(data.products) && data.products.length) {
-          setProducts(data.products.map(mapApiProduct))
-        }
-        setCatalogStatus('ready')
-      })
-      .catch((catalogError) => {
-        console.error('[catalog] Unable to load products.', catalogError)
-        setCatalogStatus('error')
-      })
-
-    fetch('/api/settings')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('settings')))
-      .then((data) => {
-        if (data.settings) setSettings(data.settings)
-      })
-      .catch(() => {})
-
-    fetch('/api/promotions')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('promotions')))
-      .then((data) => {
-        if (Array.isArray(data.promotions)) setPromotions(data.promotions)
-      })
-      .catch(() => {})
-
-    fetch('/api/banners')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('banners')))
-      .then((data) => {
-        if (Array.isArray(data.banners) && data.banners.length) {
-          setStorefrontBanners(data.banners)
-          adminStore.saveBanners(data.banners)
-        }
-      })
-      .catch(() => {})
-
+    shopData.getProducts().then((data) => {
+      if (active) setProducts(data.map(mapApiProduct))
+      if (active) setCatalogStatus('ready')
+    }).catch((catalogError) => {
+      console.error('[catalog] Unable to load products.', catalogError)
+      if (active) setCatalogStatus('error')
+    })
+    shopData.getSettings().then((data) => { if (active && data.car_gate_pickup_fee != null) setSettings({ carGatePickupFee: Number(data.car_gate_pickup_fee) }) }).catch((loadError) => console.warn('[settings] Unable to load store settings.', loadError))
+    shopData.getPromotions().then((data) => { if (active) setPromotions(data || []) }).catch((loadError) => console.warn('[promotions] Unable to load promotions.', loadError))
+    shopData.getBanners().then((data) => {
+      if (active && Array.isArray(data) && data.length) setStorefrontBanners(data.map((banner) => ({ ...banner, image: banner.image_url, altText: banner.alt_text, link: banner.link_url, sortOrder: banner.sort_order, startDate: banner.starts_on, endDate: banner.ends_on })))
+    }).catch((loadError) => console.warn('[banners] Unable to load banners.', loadError))
+    return () => { active = false }
   }, [])
 
   const refreshPaymentMethods = useCallback(async () => {
@@ -799,40 +768,24 @@ export default function App() {
     }
     setAuthBusy(true)
     try {
-      const phone = String(form.get('phone') || '')
-      const email = String(form.get('email') || '').trim()
-      const identifier = String(form.get('identifier') || '').trim()
+      const email = String(form.get('email') || form.get('identifier') || '').trim()
       const isPasswordReset = authFlow === 'forgot'
-      const response = await fetch(isSignup
-        ? '/api/customer/phone/signup'
-        : isPasswordReset
-          ? '/api/customer/phone/request'
-          : '/api/customer/phone/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isSignup
-          ? { name: String(form.get('name') || ''), phone, email, password, confirmPassword: String(form.get('confirmPassword') || '') }
-          : isPasswordReset
-            ? { phone, mode: 'reset-password' }
-            : { identifier, password })
-      })
-      const result = await readJsonResponse(response, isSignup ? 'Unable to create the account.' : isPasswordReset ? 'Unable to send a verification code.' : 'Unable to log in.')
-      if (!response.ok) throw new Error(apiErrorMessage(result, isSignup ? 'Unable to create the account.' : isPasswordReset ? 'Unable to send a verification code.' : 'Unable to log in.'))
-      if (!result.customer && !isPasswordReset) throw new Error('The server returned an unexpected response. Please try again.')
-      setAuthPhone(isPasswordReset ? phone : '')
-      if (isSignup || !isPasswordReset) {
-        setCartSyncReadyFor('')
-        setUser(result.customer)
-        setRoute({ page: 'main' })
+      if (isPasswordReset) {
+        await shopData.requestPasswordReset(email)
+        setAuthFlow('login')
+        setAuthNotice('If an account exists for that email, a password reset link has been sent.')
         return
       }
-      setAuthOtpPurpose('reset-password')
-      setAuthChallengeId(result.challengeId)
-      setAuthFlow('otp')
-      setError('')
-      setAuthNotice(result.developmentOnlyCode
-        ? `Local test OTP: ${result.developmentOnlyCode}. No SMS was sent.`
-        : 'A verification code was sent to your phone.')
+      const result = isSignup
+        ? await shopData.signUp({ name: String(form.get('name') || ''), phone: String(form.get('phone') || ''), email, password })
+        : await shopData.signIn({ email, password })
+      const authUser = result.user
+      if (!authUser) throw new Error('Check your email to confirm your account before logging in.')
+      const profile = await shopData.getProfile()
+      const customer = profile || { id: authUser.id, name: authUser.user_metadata?.full_name || '', email: authUser.email, phone: authUser.user_metadata?.phone || '' }
+      setCartSyncReadyFor('')
+      setUser({ ...customer, name: customer.full_name || customer.name })
+      setRoute({ page: 'main' })
     } catch (authError) {
       setError(authError?.message || (isSignup ? 'Unable to create the account. Please try again.' : isPasswordReset ? 'Unable to send a verification code. Please try again.' : 'Unable to log in. Please try again.'))
     } finally {
@@ -1067,15 +1020,10 @@ export default function App() {
   }
 
   async function updateProfile(profile) {
-    const response = await fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(profile)
-    })
-    const result = await response.json()
-    if (!response.ok) throw new Error(result.error || 'Unable to update your profile.')
-    setUser(result.customer)
-    return result.customer
+    const customer = await shopData.updateProfile(profile)
+    const updated = { ...customer, name: customer.full_name }
+    setUser(updated)
+    return updated
   }
 
   function validateCheckoutStep(step) {
@@ -1279,7 +1227,7 @@ export default function App() {
   }
 
   function logout() {
-    fetch('/api/customer/logout', { method: 'POST' }).catch(() => {})
+    void shopData.signOut().catch((logoutError) => console.warn('[auth] Sign-out failed.', logoutError))
     try { localStorage.removeItem('hto_guest_mode') } catch {}
     setCartSyncReadyFor('')
     setUser(null)
