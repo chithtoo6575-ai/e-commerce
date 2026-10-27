@@ -338,7 +338,7 @@ export default function MobileApp({
   }
 
   async function shareProduct(product) {
-    const shareUrl = new URL('/', window.location.origin)
+    const shareUrl = new URL(import.meta.env.BASE_URL, window.location.origin)
     shareUrl.searchParams.set('product', product.id)
     try {
       if (!navigator.share) {
