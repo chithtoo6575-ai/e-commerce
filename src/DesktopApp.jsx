@@ -70,7 +70,6 @@ export default function DesktopApp({
   activePromotion,
   couponDiscount,
   cartTotal,
-  startApp,
   beginCheckout,
   submitAuth,
   continueAsGuest,
@@ -90,7 +89,6 @@ export default function DesktopApp({
   CATEGORY_TREE,
   DELIVERY_METHODS,
   formatPrice,
-  ONBOARDING_KEY,
   storefrontBanners = [],
   supportChannels = [],
   supportChannelsLoading = false,
@@ -136,22 +134,6 @@ export default function DesktopApp({
     }, 3500)
     return () => window.clearInterval(timer)
   }, [route.page, activeTab, isDesktopViewport, prefersReducedMotion, activeBanners.length])
-
-  if (route.page === 'launch') {
-    return (
-      <main className="launch-screen">
-        <section className="launch-card">
-          <p className="kicker">{tr('APP LAUNCH')}</p>
-          <h1>{tr('Dress Better.')} {tr('Live Brighter.')}</h1>
-          <p>{tr('Fashion-first shopping with curated categories, smart search, wishlist, and fast checkout.')}</p>
-          <div className="launch-actions">
-            <button className="btn-primary" onClick={startApp}>{tr('Start Onboarding')}</button>
-            <button className="btn-ghost" onClick={() => { localStorage.setItem(ONBOARDING_KEY, '1'); setRoute({ page: 'auth' }) }}>{tr('Skip')}</button>
-          </div>
-        </section>
-      </main>
-    )
-  }
 
   if (route.page === 'auth') {
     return <BuyerAuth authMode={authMode} setAuthMode={setAuthMode} authFlow={authFlow} setAuthFlow={setAuthFlow} otpPurpose={authOtpPurpose} error={error} notice={authNotice} setError={setError} onSubmit={submitAuth} onOtpSubmit={authActions.verifyOtp} onResetPassword={resetCustomerPassword} onResendOtp={authActions.resendOtp} continueAsGuest={continueAsGuest} busy={authBusy} language={language} authPhone={authPhone} setAuthPhone={setAuthPhone} />

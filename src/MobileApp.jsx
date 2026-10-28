@@ -6,7 +6,6 @@ import { AddToCartButton, CartIcon } from './CartControls'
 import { getProductStock, getProductVariants, hasVariantStock, variantStockKey } from './lib/productVariants'
 import SupportChannelList from './SupportChannelList'
 
-const STORE_LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`
 // Header mark: white letterform only (no cart glyph, no shadow).
 const HEADER_LOGO_URL = `${import.meta.env.BASE_URL}logo-white.svg`
 
@@ -209,7 +208,6 @@ export default function MobileApp({
   activePromotion,
   couponDiscount,
   cartTotal,
-  startApp,
   beginCheckout,
   exitCheckoutToCart,
   submitAuth,
@@ -231,8 +229,7 @@ export default function MobileApp({
   logout,
   CATEGORY_TREE: _CATEGORY_TREE,
   DELIVERY_METHODS,
-  formatPrice,
-  ONBOARDING_KEY
+  formatPrice
 }) {
   // Mobile UI States
   const deepLinkedProductId = new URLSearchParams(window.location.search).get('product')
@@ -785,35 +782,6 @@ export default function MobileApp({
     } finally {
       setIsSubmittingOrder(false)
     }
-  }
-
-  // --------------------------------------------------------------------------
-  // ONBOARDING / LAUNCH SCREEN (MOBILE)
-  // --------------------------------------------------------------------------
-  if (route.page === 'launch') {
-    return (
-      <main className="mobile-shell mob-confirm-screen">
-        <div className="mob-confirm-card" style={{ marginTop: '2rem' }}>
-          <img src={STORE_LOGO_URL} alt="" style={{ width: '56px', height: '56px', display: 'block', margin: '0 auto 1.25rem' }} />
-          <span className="mob-hero-badge">HTOO ONLINE SHOP</span>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0.5rem 0', color: 'var(--mob-ink)' }}>{tr('Dress Better.')}<br />{tr('Live Brighter.')}</h1>
-          <label className="mob-launch-language">
-            <span>{language === 'my' ? 'ðŸ‡²ðŸ‡²' : 'ðŸ‡ºðŸ‡¸'} {tr('Language')}</span>
-            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-              <option value="my">🇲🇲 မြန်မာ</option>
-              <option value="en">ðŸ‡ºðŸ‡¸ English</option>
-            </select>
-          </label>
-          <p style={{ fontSize: '0.86rem', color: 'var(--mob-muted)', lineHeight: 1.5, marginBottom: '1.5rem' }}>
-            {tr('Fashion-first shopping with curated categories, smart search, wishlist, and fast checkout.')}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-            <button className="mob-btn-primary" onClick={startApp}>{tr('Get Started')}</button>
-            <button className="mob-btn-secondary" onClick={() => { localStorage.setItem(ONBOARDING_KEY, '1'); setRoute({ page: 'auth' }) }}>{tr('Skip to Shop')}</button>
-          </div>
-        </div>
-      </main>
-    )
   }
 
   // --------------------------------------------------------------------------

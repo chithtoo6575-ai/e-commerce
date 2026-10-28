@@ -14,7 +14,6 @@ const GUEST_CART_KEY = 'atelier_guest_cart'
 const GUEST_WISHLIST_KEY = 'atelier_guest_wishlist'
 const GUEST_ORDER_ACCESS_KEY = 'hto_guest_order_access_key'
 const ORDER_REQUEST_KEY = 'hto_order_request_key'
-const ONBOARDING_KEY = 'shop_onboarding_seen'
 const formatPrice = (amount) => `Ks ${Math.round(amount || 0).toLocaleString('en-US')}`
 let fallbackOrderRequestKey = ''
 
@@ -242,14 +241,7 @@ export default function App() {
   const [guestMode, setGuestMode] = useState(() => {
     try { return localStorage.getItem('hto_guest_mode') === 'true' } catch { return false }
   })
-  const [route, setRoute] = useState(() => {
-    try {
-      if (localStorage.getItem('hto_guest_mode') === 'true') return { page: 'main' }
-      return { page: localStorage.getItem(ONBOARDING_KEY) ? 'auth' : 'launch' }
-    } catch {
-      return { page: 'launch' }
-    }
-  })
+  const [route, setRoute] = useState({ page: 'main' })
   const [authMode, setAuthMode] = useState('signin')
   const [authFlow, setAuthFlow] = useState('login')
   const [authOtpPurpose, setAuthOtpPurpose] = useState('')
@@ -724,11 +716,6 @@ export default function App() {
   })
   const couponDiscount = activePromotion ? Math.max(0, Math.min(cartSubtotal, activePromotion.type === 'percentage' ? Math.round(cartSubtotal * Number(activePromotion.amount) / 100) : Number(activePromotion.amount))) : 0
   const cartTotal = Math.max(0, cartSubtotal + deliveryFee - couponDiscount)
-
-  function startApp() {
-    localStorage.setItem(ONBOARDING_KEY, '1')
-    setRoute({ page: 'auth' })
-  }
 
   function beginCheckout(startStep = 'review') {
     // Prefill the form with the customer's default saved address (or the most recent one),
@@ -1340,7 +1327,6 @@ export default function App() {
     activePromotion,
     couponDiscount,
     cartTotal,
-    startApp,
     beginCheckout,
     exitCheckoutToCart,
     submitAuth,
@@ -1364,8 +1350,7 @@ export default function App() {
     MAIN_TABS,
     CATEGORY_TREE,
     DELIVERY_METHODS,
-    formatPrice,
-    ONBOARDING_KEY
+    formatPrice
   }
 
   return (

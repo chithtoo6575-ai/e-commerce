@@ -79,7 +79,6 @@ textarea {
   padding: 0;
 }
 
-.launch-screen,
 .auth-screen,
 .confirm-screen {
   display: grid;
@@ -87,7 +86,6 @@ textarea {
   padding: 2rem 1rem;
 }
 
-.launch-card,
 .auth-panel,
 .confirm-card {
   width: min(720px, 100%);
@@ -98,11 +96,6 @@ textarea {
   display: grid;
   gap: 1rem;
   box-shadow: 0 20px 35px rgba(65, 44, 20, 0.1);
-}
-
-.launch-card h1 {
-  font-family: 'Playfair Display', serif;
-  font-size: clamp(2rem, 5vw, 3.2rem);
 }
 
 .launch-actions {
