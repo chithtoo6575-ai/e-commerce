@@ -17,9 +17,12 @@ function copy404Plugin() {
   }
 }
 
+const rawBase = (process.env.VITE_BASE_PATH && process.env.VITE_BASE_PATH.trim()) || '/e-commerce/'
+const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`
+
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/e-commerce/',
+  base,
   plugins: [react(), copy404Plugin()],
   server: {
     host: true,
