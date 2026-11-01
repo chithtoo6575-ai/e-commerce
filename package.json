@@ -1,0 +1,32 @@
+{
+  "name": "my-online-shop",
+  "private": true,
+  "version": "0.0.0",
+  "homepage": "https://chithtoo6575-ai.github.io/e-commerce/",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node dev.mjs",
+    "dev:api": "node server.js",
+    "admin:setup": "node setup-admin.mjs",
+    "telegram:setup": "node scripts/setup-telegram.mjs",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "nodemailer": "^10.0.15",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "oxlint": "^1.79.0",
+    "vite": "^8.2.2"
+  }
+}

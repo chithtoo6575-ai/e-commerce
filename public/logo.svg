@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="26" y1="15" x2="103" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE979"/>
+      <stop offset=".42" stop-color="#FFC72E"/>
+      <stop offset="1" stop-color="#D58A12"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="25" y1="20" x2="104" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF5B4"/>
+      <stop offset="1" stop-color="#B76B08"/>
+    </linearGradient>
+    <filter id="shadow" x="16" y="12" width="104" height="110" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="3" dy="5"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope=".25"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <path id="h-shape" d="M24 16h18v30h44V16h18v94H86V64H42v46H24V16Z"/>
+    <clipPath id="h-clip">
+      <use href="#h-shape"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <use href="#h-shape" fill="#A9650C" transform="translate(2 2)"/>
+    <use href="#h-shape" fill="url(#gold)" stroke="url(#edge)" stroke-width="1.5"/>
+    <path d="M27 19h12v31h-12zM45 49h38v4H45z" fill="#FFF5B4" opacity=".38" clip-path="url(#h-clip)"/>
+  </g>
+
+  <g stroke="#8C5208" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 70h5l4 18h23l5-14H51" stroke-width="3.2"/>
+    <path d="m55 77 20 0M58 82h15" stroke-width="2.2" opacity=".65"/>
+    <circle cx="58" cy="94" r="3.1" fill="#8C5208" stroke="none"/>
+    <circle cx="72" cy="94" r="3.1" fill="#8C5208" stroke="none"/>
+    <path d="M45 77h3M43 83h4M42 89h5" stroke="#FFF4B5" stroke-width="2.4"/>
+  </g>
+  <path d="M53 72h24l-3 8H55z" fill="#FFF4B5" opacity=".55"/>
+</svg>

@@ -1,0 +1,34 @@
+# Secrets / environment
+.env
+.env.*
+!.env.example
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+*.local
+# Logs and local data
+logs
+*.log
+data/admin.json
+data/shop.json
+data/shop.db
+data/payments.json
+data/settings.json
+data/shop.sqlite
+data/shop.sqlite-shm
+data/shop.sqlite-wal
+# Debug / QA artifacts (may contain credentials)
+.tmp-*
+.qa-*
+qa-password-toggle.mjs
+# Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
