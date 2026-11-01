@@ -343,7 +343,7 @@ export default function AdminShell({
         {/* Brand Header */}
         <div className="sidebar-brand-box">
           <a
-            href="/admin"
+            href={getAdminUrl('/admin')}
             className="brand-link"
             onClick={(e) => { e.preventDefault(); navigateTo('Dashboard') }}
           >
@@ -510,7 +510,7 @@ export default function AdminShell({
 
             {/* View Storefront Link */}
             <a
-              href="/"
+              href={getAdminUrl('/')}
               target="_blank"
               rel="noopener noreferrer"
               className="store-link-btn"
