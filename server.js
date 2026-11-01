@@ -184,7 +184,8 @@ function send(response, status, body, headers = {}) {
   response.end(JSON.stringify(payload))
 }
 function cookieValue(request, name) {
-  return (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.split('=')[1]
+  const match = (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
+  return match ? match.slice(name.length + 1) : undefined
 }
 function adminSession(request) {
   const token = cookieValue(request, 'hto_admin_session')
@@ -633,9 +634,49 @@ function cleanPromotion(input, existing = {}) {
   if (!promotion.name || !PROMOTION_TYPES.includes(promotion.type) || !Number.isFinite(promotion.amount) || promotion.amount <= 0 || (promotion.type === 'percentage' && promotion.amount > 100)) throw new Error('Promotion requires a name and a valid percentage or Ks amount.')
   return promotion
 }
+function persistProductImages(rawImageInput, rawImagesInput, productName) {
+  let rawImage = typeof rawImageInput === 'string' ? rawImageInput.trim() : ''
+  if (rawImage.startsWith('data:image/')) {
+    const saved = saveImageToDisk(rawImage, productName || 'product')
+    if (saved) rawImage = saved
+  }
+  let images = Array.isArray(rawImagesInput)
+    ? rawImagesInput.map((img) => typeof img === 'string' && img.startsWith('data:image/') ? (saveImageToDisk(img, productName || 'product') || img) : img).filter((img) => typeof img === 'string' && img.trim().length > 0)
+    : []
+  if (rawImage && !images.includes(rawImage)) {
+    images = [rawImage, ...images]
+  }
+  return { image: rawImage || images[0] || '', images }
+}
+function verifyVariantInventory(variantStockInput, parsedSizes, availableColors, existingId, orders = []) {
+  if (variantStockInput == null) return null
+  if (typeof variantStockInput !== 'object' || Array.isArray(variantStockInput)) invalidAdminInput('Variant stock must be a size/color inventory map.')
+  const sizeOptions = parsedSizes.length ? parsedSizes : ['']
+  const colorOptions = availableColors.length ? availableColors : ['']
+  const expectedKeys = new Set(sizeOptions.flatMap((size) => colorOptions.map((color) => productVariantStockKey({ size, color }))))
+  const variantStock = {}
+  for (const [key, rawQuantity] of Object.entries(variantStockInput)) {
+    const quantity = Number(rawQuantity)
+    if (!expectedKeys.has(key) || !Number.isSafeInteger(quantity) || quantity < 0) invalidAdminInput('Variant stock must contain valid, non-negative whole-unit quantities for the selected sizes and colors.')
+    variantStock[key] = quantity
+  }
+  if (Object.keys(variantStock).length !== expectedKeys.size || [...expectedKeys].some((key) => !Object.hasOwn(variantStock, key))) {
+    invalidAdminInput('Enter a stock quantity for every available size and color combination.')
+  }
+  if (existingId != null) {
+    const activeOrderWithoutVariant = orders.some((order) => order.status !== 'Cancelled' &&
+      (order.items || []).some((item) => String(item.productId || item.id) === String(existingId) &&
+        !Object.hasOwn(variantStock, productVariantStockKey(item.variants || {}))))
+    if (activeOrderWithoutVariant) invalidAdminInput('Keep every size/color selection used by an active historical order so cancellation can restore its stock safely.')
+  }
+  const totalVariantStock = Object.values(variantStock).reduce((total, quantity) => total + quantity, 0)
+  if (!Number.isSafeInteger(totalVariantStock)) invalidAdminInput('The total variant stock exceeds the supported quantity.')
+  return { variantStock, totalVariantStock }
+}
 function cleanProduct(input, existing = {}) {
   const product = { ...existing, ...input }
-  const categories = readData().categories
+  const currentShopData = readData()
+  const categories = currentShopData.categories
   product.id = existing.id != null ? existing.id : (product.id != null ? product.id : crypto.randomUUID())
   product.nameEn = String(product.nameEn || product.name || '').trim()
   product.name = product.nameEn
@@ -661,19 +702,9 @@ function cleanProduct(input, existing = {}) {
   product.lowStockThreshold = Number(product.lowStockThreshold || 5)
 
   // Allow data URIs, absolute URLs, and root-relative image paths
-  let rawImage = typeof product.image === 'string' ? product.image.trim() : ''
-  if (rawImage.startsWith('data:image/')) {
-    const saved = saveImageToDisk(rawImage, product.nameEn || 'product')
-    if (saved) rawImage = saved
-  }
-  let images = Array.isArray(product.images)
-    ? product.images.map((img) => typeof img === 'string' && img.startsWith('data:image/') ? (saveImageToDisk(img, product.nameEn || 'product') || img) : img).filter((img) => typeof img === 'string' && img.trim().length > 0)
-    : []
-  if (rawImage && !images.includes(rawImage)) {
-    images = [rawImage, ...images]
-  }
+  const { image, images } = persistProductImages(product.image, product.images, product.nameEn)
+  product.image = image
   product.images = images
-  product.image = rawImage || images[0] || ''
 
   product.enabled = product.enabled !== false
   product.status = product.enabled ? 'Active' : 'Draft'
@@ -695,28 +726,10 @@ function cleanProduct(input, existing = {}) {
     colors: [...new Set((Array.isArray(rawVariantColors) ? rawVariantColors : typeof rawVariantColors === 'string' ? rawVariantColors.split(',') : [])
       .map((color) => String(color).trim()).filter(Boolean))]
   }
-  if (product.variantStock != null) {
-    if (typeof product.variantStock !== 'object' || Array.isArray(product.variantStock)) invalidAdminInput('Variant stock must be a size/color inventory map.')
-    const sizeOptions = parsedSizes.length ? parsedSizes : ['']
-    const colorOptions = product.availableVariants.colors.length ? product.availableVariants.colors : ['']
-    const expectedKeys = new Set(sizeOptions.flatMap((size) => colorOptions.map((color) => productVariantStockKey({ size, color }))))
-    const variantStock = {}
-    for (const [key, rawQuantity] of Object.entries(product.variantStock)) {
-      const quantity = Number(rawQuantity)
-      if (!expectedKeys.has(key) || !Number.isSafeInteger(quantity) || quantity < 0) invalidAdminInput('Variant stock must contain valid, non-negative whole-unit quantities for the selected sizes and colors.')
-      variantStock[key] = quantity
-    }
-    if (Object.keys(variantStock).length !== expectedKeys.size || [...expectedKeys].some((key) => !Object.hasOwn(variantStock, key))) {
-      invalidAdminInput('Enter a stock quantity for every available size and color combination.')
-    }
-    const activeOrderWithoutVariant = readData().orders.some((order) => order.status !== 'Cancelled' &&
-      (order.items || []).some((item) => String(item.productId || item.id) === String(existing.id) &&
-        !Object.hasOwn(variantStock, productVariantStockKey(item.variants || {}))))
-    if (activeOrderWithoutVariant) invalidAdminInput('Keep every size/color selection used by an active historical order so cancellation can restore its stock safely.')
-    const totalVariantStock = Object.values(variantStock).reduce((total, quantity) => total + quantity, 0)
-    if (!Number.isSafeInteger(totalVariantStock)) invalidAdminInput('The total variant stock exceeds the supported quantity.')
-    product.variantStock = variantStock
-    product.stock = totalVariantStock
+  const verifiedInventory = verifyVariantInventory(product.variantStock, parsedSizes, product.availableVariants.colors, existing.id, currentShopData.orders)
+  if (verifiedInventory) {
+    product.variantStock = verifiedInventory.variantStock
+    product.stock = verifiedInventory.totalVariantStock
   } else {
     delete product.variantStock
   }

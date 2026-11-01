@@ -409,7 +409,7 @@ export default function App() {
       }
     }
     restoreCustomer().catch((restoreError) => console.error('[auth] Session restoration failed.', restoreError))
-    if (supabase) supabase.auth.onAuthStateChange((_event, session) => {
+    const authListener = supabase?.auth.onAuthStateChange((_event, session) => {
       if (!session) setUser(null)
     })
     const telegramWebApp = window.Telegram?.WebApp
@@ -457,7 +457,10 @@ export default function App() {
     shopData.getBanners().then((data) => {
       if (active && Array.isArray(data) && data.length) setStorefrontBanners(data.map((banner) => ({ ...banner, image: banner.image_url, altText: banner.alt_text, link: banner.link_url, sortOrder: banner.sort_order, startDate: banner.starts_on, endDate: banner.ends_on })))
     }).catch((loadError) => console.warn('[banners] Unable to load banners.', loadError))
-    return () => { active = false }
+    return () => {
+      active = false
+      authListener?.data?.subscription?.unsubscribe()
+    }
   }, [])
 
   const refreshPaymentMethods = useCallback(async () => {

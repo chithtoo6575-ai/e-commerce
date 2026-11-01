@@ -1,6 +1,19 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeadersFor } from '../_shared/cors.ts'
 
+interface CreateOrderItem {
+  productId?: string
+  quantity?: number
+}
+
+interface CreateOrderPayload {
+  items?: CreateOrderItem[]
+  shippingAddress?: Record<string, unknown>
+  recipientName?: string
+  recipientPhone?: string
+  idempotencyKey?: string
+}
+
 Deno.serve(async (request) => {
   const corsHeaders = corsHeadersFor(request.headers.get('Origin') || undefined)
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -14,9 +27,15 @@ Deno.serve(async (request) => {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) return Response.json({ error: 'Authentication required' }, { status: 401, headers: corsHeaders })
   try {
-    const body = await request.json()
-    const items = Array.isArray(body.items) ? body.items.map((item: { productId?: string; quantity?: number }) => ({ product_id: item.productId, quantity: item.quantity })) : null
-    if (!items || items.length === 0 || items.length > 50 || !body.shippingAddress || typeof body.shippingAddress !== 'object') throw new Error('Invalid checkout details')
+    const body: CreateOrderPayload = await request.json()
+    const items = Array.isArray(body.items)
+      ? body.items
+          .filter((item: unknown): item is { productId: string; quantity: number } =>
+            Boolean(item && typeof item === 'object' && typeof (item as { productId?: unknown }).productId === 'string' && (item as { productId: string }).productId.trim() && Number.isInteger((item as { quantity?: unknown }).quantity) && ((item as { quantity: number }).quantity) > 0)
+          )
+          .map((item: { productId: string; quantity: number }) => ({ product_id: item.productId.trim(), quantity: item.quantity }))
+      : null
+    if (!items || items.length === 0 || items.length !== body.items?.length || items.length > 50 || !body.shippingAddress || typeof body.shippingAddress !== 'object') throw new Error('Invalid checkout details')
     const { data: orderId, error } = await supabase.rpc('create_order', {
       p_items: items,
       p_shipping_address: body.shippingAddress,

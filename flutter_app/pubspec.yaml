@@ -1,0 +1,33 @@
+name: htoo_shop
+description: "HTOO Shop - Flutter mobile/web storefront migrated from the React web app."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_dotenv: ^5.2.1
+  supabase_flutter: ^2.8.0
+  provider: ^6.1.2
+  carousel_slider: ^5.0.0
+  flutter_screenutil: ^5.9.4
+  http: ^1.2.2
+  url_launcher: ^6.3.1
+  cached_network_image: ^3.4.1
+  shared_preferences: ^2.3.2
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
+    - assets/images/
