@@ -102,6 +102,10 @@ export default function DesktopApp({
   const activeBanners = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     return (storefrontBanners || [])
+      .map((banner) => ({
+        ...banner,
+        image: banner.image || banner.image_url || banner.imageUrl || '',
+      }))
       .filter((banner) => banner.enabled !== false && banner.image && (!banner.startDate || banner.startDate.slice(0, 10) <= today) && (!banner.endDate || banner.endDate.slice(0, 10) >= today))
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   }, [storefrontBanners])
@@ -306,6 +310,8 @@ export default function DesktopApp({
           {activeBanners.length > 0 ? (
             <div className="desktop-hero-banner">
               <img
+                 key={currentBannerIndex}
+
                 src={(activeBanners[currentBannerIndex] || activeBanners[0]).image}
                 alt={(activeBanners[currentBannerIndex] || activeBanners[0]).altTextMy && language === 'my' ? activeBanners[currentBannerIndex].altTextMy : (activeBanners[currentBannerIndex] || activeBanners[0]).altText || tr('Promotional Banner')}
                 className="desktop-banner-img"

@@ -247,6 +247,7 @@ export default function MobileApp({
   // Screen-reader announcement after a support channel is opened.
   const [supportNotice, setSupportNotice] = useState('')
   const [activeBannerIndex, setActiveBannerIndex] = useState(0)
+  const bannerIndexRef = useRef(0)
   const bannerTrackRef = useRef(null)
   const bannerResumeTimeoutRef = useRef(null)
   const [bannerAutoplayPaused, setBannerAutoplayPaused] = useState(false)
@@ -281,6 +282,10 @@ export default function MobileApp({
     const heroLayout = storefrontLayout.find((block) => block.id === 'block-hero')
     if (heroLayout?.enabled === false) return []
     return storefrontBanners
+      .map((banner) => ({
+        ...banner,
+        image: banner.image || banner.image_url || banner.imageUrl || '',
+      }))
       .filter((banner) => banner.enabled !== false && banner.image && (!banner.startDate || banner.startDate.slice(0, 10) <= today) && (!banner.endDate || banner.endDate.slice(0, 10) >= today))
       .sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0))
   }, [storefrontBanners, storefrontLayout])
@@ -465,6 +470,10 @@ export default function MobileApp({
   const currentBannerIndex = activeBanners.length ? activeBannerIndex % activeBanners.length : 0
 
   useEffect(() => {
+    bannerIndexRef.current = currentBannerIndex
+  }, [currentBannerIndex])
+
+  useEffect(() => {
     const mobileQuery = window.matchMedia('(max-width: 767px)')
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
     const updateMediaPreferences = () => {
@@ -493,11 +502,13 @@ export default function MobileApp({
     ) return
 
     const timer = window.setInterval(() => {
-      const nextIndex = (currentBannerIndex + 1) % activeBanners.length
       const track = bannerTrackRef.current
-      const slide = track?.children[nextIndex]
-      if (!track || !slide) return
-      track.scrollTo({ left: slide.offsetLeft, behavior: 'smooth' })
+      if (!track || !track.children.length) return
+      const nextIndex = (bannerIndexRef.current + 1) % activeBanners.length
+      const slide = track.children[nextIndex]
+      const left = slide ? slide.offsetLeft : nextIndex * (track.clientWidth || 0)
+      track.scrollTo({ left, behavior: 'smooth' })
+      bannerIndexRef.current = nextIndex
       setActiveBannerIndex(nextIndex)
     }, 3500)
     return () => window.clearInterval(timer)
@@ -510,8 +521,7 @@ export default function MobileApp({
     isMobileViewport,
     prefersReducedMotion,
     bannerAutoplayPaused,
-    activeBanners,
-    currentBannerIndex
+    activeBanners.length
   ])
 
   useEffect(() => () => window.clearTimeout(bannerResumeTimeoutRef.current), [])
@@ -532,6 +542,7 @@ export default function MobileApp({
     if (!track || !slide) return
     pauseBannerAutoplay()
     track.scrollTo({ left: slide.offsetLeft, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
+    bannerIndexRef.current = index
     setActiveBannerIndex(index)
     resumeBannerAutoplaySoon()
   }
@@ -1288,12 +1299,21 @@ export default function MobileApp({
                 onScroll={(event) => {
                   const track = event.currentTarget
                   const step = track.clientWidth || 1
-                  setActiveBannerIndex(Math.min(activeBanners.length - 1, Math.max(0, Math.round(track.scrollLeft / step))))
+                  const idx = Math.min(activeBanners.length - 1, Math.max(0, Math.round(track.scrollLeft / step)))
+                  bannerIndexRef.current = idx
+                  setActiveBannerIndex(idx)
                 }}
               >
                 {activeBanners.map((banner, index) => (
-                  <div className="mob-banner-slide" key={banner.id || `${banner.image}-${index}`}>
-                    <img src={banner.image} alt={banner.altText || tr('Store promotion')} />
+                  <div className="mob-banner-slide" key={banner.id || `banner-${index}`}>
+                    <img
+                      src={banner.image}
+                      alt={banner.altText || tr('Store promotion')}
+                      loading={index === 0 ? 'eager' : 'lazy'}
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                      }}
+                    />
                   </div>
                 ))}
               </div>
