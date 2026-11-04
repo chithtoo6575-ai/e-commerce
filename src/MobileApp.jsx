@@ -1,13 +1,16 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import './Mobile.css'
 import BuyerAuth from './BuyerAuth'
+import { getBasePath } from './lib/baseUrl.js'
+
+
 import { t } from './lib/i18n'
 import { AddToCartButton, CartIcon } from './CartControls'
 import { getProductStock, getProductVariants, hasVariantStock, variantStockKey } from './lib/productVariants'
 import SupportChannelList from './SupportChannelList'
 
 // Header mark: white letterform only (no cart glyph, no shadow).
-const HEADER_LOGO_URL = `${import.meta.env.BASE_URL}logo-white.svg`
+const HEADER_LOGO_URL = `${getBasePath()}/logo-white.svg`
 
 function hasValidCartVariants(item, product) {
   const { sizes, colors } = getProductVariants(product)

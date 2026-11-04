@@ -1,4 +1,6 @@
-const deploymentBase = import.meta.env.BASE_URL.replace(/\/+$/, '')
+import { getBasePath } from '../lib/baseUrl.js'
+
+const deploymentBase = getBasePath()
 
 export function getAdminPath(pathname = window.location.pathname) {
   if (deploymentBase && pathname.startsWith(`${deploymentBase}/`)) {

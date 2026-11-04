@@ -15,6 +15,9 @@ import {
 } from './AdminIcons'
 import { NAV_STRUCTURE } from './navStructure'
 import { adminFetch } from '../adminApi'
+import { getBasePath } from '../lib/baseUrl.js'
+
+
 
 import DashboardPage from './pages/DashboardPage'
 import ProductsPage from './pages/ProductsPage'
@@ -349,7 +352,7 @@ export default function AdminShell({
           >
             <img
               className="brand-mark-logo"
-              src={`${import.meta.env.BASE_URL}logo-white.svg`}
+              src={`${getBasePath()}/logo-white.svg`}
               alt={adminT("H logo")}
             />
           </a>

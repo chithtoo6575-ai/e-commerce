@@ -9,6 +9,9 @@ import {
   IconRefresh
 } from '../AdminIcons'
 
+import { getBasePath } from '../../lib/baseUrl.js'
+
+
 const formatMoney = (val) => `Ks ${Math.round(val || 0).toLocaleString('en-US')}`
 
 const ORDER_STATUSES = [
@@ -1019,7 +1022,7 @@ export function OrderDetailDrawer({
 
           <section className="order-voucher" aria-label={adminT('Delivery parcel voucher')}>
             <header className="order-voucher-header">
-              <img className="order-voucher-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt={adminT('H logo')} />
+              <img className="order-voucher-logo" src={`${getBasePath()}/logo.svg`} alt={adminT('H logo')} />
               <div>
                 <p className="order-voucher-success">{adminT('Order Placed Successfully!')}</p>
                 <span>{adminT('Htoo Online Shop')}</span>
