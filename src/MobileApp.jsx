@@ -182,8 +182,6 @@ export default function MobileApp({
   setSortBy,
   filters,
   setFilters,
-  coupon,
-  setCoupon,
   checkoutStep,
   setCheckoutStep,
   addressBook,
@@ -206,7 +204,6 @@ export default function MobileApp({
   deliveryFee,
   selectedPaymentAccount,
   isCashPayment,
-  activePromotion,
   couponDiscount,
   cartTotal,
   beginCheckout,
@@ -337,20 +334,6 @@ export default function MobileApp({
       setTimeout(() => setCopiedText(false), 2000)
     } catch (copyError) {
       setError(copyError.message || 'Unable to copy this payment detail.')
-    }
-  }
-
-  async function shareProduct(product) {
-    const shareUrl = new URL(import.meta.env.BASE_URL, window.location.origin)
-    shareUrl.searchParams.set('product', product.id)
-    try {
-      if (!navigator.share) {
-        await copyToClipboard(shareUrl.toString())
-        return
-      }
-      await navigator.share({ title: product.name, text: product.description || product.name, url: shareUrl.toString() })
-    } catch (shareError) {
-      if (shareError.name !== 'AbortError') setError(shareError.message || tr('Unable to share this product.'))
     }
   }
 
@@ -1467,10 +1450,8 @@ export default function MobileApp({
               ))}
             </div>
           ) : (
-            <div className="mob-empty-state">
-              <div className="mob-empty-icon">🤍</div>
+            <div className="mob-empty-state mob-cart-empty-state">
               <h4 className="mob-empty-title">{tr('Your wishlist is empty')}</h4>
-              <p className="mob-empty-desc">{tr('Explore our collections and tap the heart icon to save products you love.')}</p>
               <button className="mob-btn-primary" onClick={() => { setActiveTab('home'); setSelectedMobileCategory('All') }}>
                 {tr('Discover Products')}
               </button>
@@ -1547,32 +1528,6 @@ export default function MobileApp({
                 ))}
               </div>
 
-              {/* Coupon Row */}
-              <div className="mob-coupon-card">
-                <input
-                  className="mob-coupon-input"
-                  value={coupon}
-                  onChange={(e) => setCoupon(e.target.value)}
-                  placeholder={tr('Promo code')}
-                />
-                <button
-                  className="mob-coupon-btn"
-                  type="button"
-                  disabled={!coupon.trim()}
-                  onClick={() => {
-                    if (activePromotion) showToast(tr('Promotion applied!'))
-                    else showToast(tr('No active promotion matches this code'))
-                  }}
-                >
-                  {tr('Apply')}
-                </button>
-              </div>
-              {coupon && (
-                <div className={`mob-coupon-badge ${activePromotion ? 'is-valid' : 'is-invalid'}`} role={activePromotion ? 'status' : 'alert'}>
-                  {activePromotion ? `✓ ${activePromotion.name} ${tr('applied')} (−${formatPrice(couponDiscount)})` : `✗ ${tr('No active promotion matches this code')}`}
-                </div>
-              )}
-
               {/* Sticky checkout footer bar, sitting just above the bottom nav */}
               <div className="mob-cart-checkout-footer">
                 <button
@@ -1591,10 +1546,8 @@ export default function MobileApp({
               </div>
             </>
           ) : (
-            <div className="mob-empty-state">
-              <div className="mob-empty-icon">🔍</div>
+            <div className="mob-empty-state mob-cart-empty-state">
               <h4 className="mob-empty-title">{tr('Your cart is empty')}</h4>
-              <p className="mob-empty-desc">{tr('Looks like you haven’t added anything to your cart yet.')}</p>
               <button className="mob-btn-primary" onClick={() => { setActiveTab('home'); setSelectedMobileCategory('All') }}>
                 {tr('Start Shopping')}
               </button>
@@ -1812,16 +1765,11 @@ export default function MobileApp({
         <MobileProductDetailSheet
           key={viewingProduct.id}
           product={viewingProduct}
-          products={products}
           cart={cart}
           cartCount={cartCount}
           language={language}
-          wished={wishlist.includes(viewingProduct.id)}
           onClose={closeProductDetail}
           onOpenCart={() => { closeProductDetail(); setActiveTab('cart') }}
-          onShare={shareProduct}
-          onSelectProduct={setViewingProduct}
-          onWish={() => toggleWishlist(viewingProduct.id)}
           onAddToCart={handleAddToCart}
           onBuyNow={handleBuyNow}
           formatPrice={formatPrice}
@@ -2571,7 +2519,7 @@ function MobileProductCard({ product, wished, onWish, onAdd, onSelect, formatPri
 // --------------------------------------------------------------------------
 // MOBILE PRODUCT DETAIL SHEET COMPONENT
 // --------------------------------------------------------------------------
-function MobileProductDetailSheet({ product, products, cart, cartCount, wished, onClose, onOpenCart, onShare, onSelectProduct, onWish, onAddToCart, onBuyNow, formatPrice, language }) {
+function MobileProductDetailSheet({ product, cart, cartCount, onClose, onOpenCart, onAddToCart, onBuyNow, formatPrice, language }) {
   const tr = (text) => t(text, language)
   const images = (Array.isArray(product.images) && product.images.length ? product.images : [product.image]).filter(Boolean)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
@@ -2581,15 +2529,6 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
   const [selectedSize, setSelectedSize] = useState('')
   const [selectedColor, setSelectedColor] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [recentlyViewedIds] = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('hto_recently_viewed') || '[]')
-      return Array.isArray(stored) ? stored : []
-    } catch (storageError) {
-      console.warn('[catalog] Could not read recently viewed products.', storageError)
-      return []
-    }
-  })
   const touchStartX = useRef(null)
   const unitPrice = Number(product.price) || 0
   const totalPrice = unitPrice * quantity
@@ -2608,19 +2547,6 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
   const quantityInCart = cartQuantityForVariants(selectedVariants)
   const remainingStock = Math.max(0, stock - quantityInCart)
   const canPurchase = !needsVariantSelection && remainingStock > 0 && quantity <= remainingStock
-  const recentlyViewedProducts = recentlyViewedIds
-    .filter((id) => String(id) !== String(product.id))
-    .map((id) => products.find((item) => String(item.id) === String(id)))
-    .filter(Boolean)
-    .slice(0, 6)
-
-  useEffect(() => {
-    const next = [String(product.id), ...recentlyViewedIds.filter((id) => String(id) !== String(product.id))].slice(0, 12)
-    try { localStorage.setItem('hto_recently_viewed', JSON.stringify(next)) } catch (storageError) {
-      console.warn('[catalog] Could not save recently viewed products.', storageError)
-    }
-  }, [product.id, recentlyViewedIds])
-
   function changeImage(index) {
     if (images.length < 2) return
     setSelectedImageIndex((index + images.length) % images.length)
@@ -2704,9 +2630,6 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
                   <span className="mob-detail-image-count" aria-live="polite">{selectedImageIndex + 1}/{images.length}</span>
                 </>
               )}
-              <button className={`mob-detail-wishlist ${wished ? '❤️' : '🤍'}`} onClick={onWish} aria-label={wished ? tr('Remove from wishlist') : tr('Add to wishlist')}>
-          {wished ? '❤️' : '🤍'}
-              </button>
             </div>
             {images.length > 1 && (
               <div className="mob-detail-thumbs" aria-label={tr('Choose product image')}>
@@ -2726,22 +2649,13 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
           </section>
 
           <section className="mob-detail-product-info">
-            <div className="mob-detail-eyebrow-row">
-              <div className="mob-detail-eyebrow">{product.brand || 'HTOO'}{product.category ? ` · ${product.category}` : ''}</div>
-              <button className="mob-detail-share" onClick={() => onShare(product)} aria-label={tr('Share product')}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                  <path d="m8.6 10.7 6.8-4.4m-6.8 7 6.8 4.3" />
-                </svg>
-              </button>
-            </div>
+            <div className="mob-detail-eyebrow">{product.brand || 'HTOO'}{product.category ? ` · ${product.category}` : ''}</div>
             <h1 className="mob-detail-title" id="mob-detail-title">{language === 'my' ? product.nameMy || product.name : product.name}</h1>
             <div className="mob-detail-price-row">
               <div className="mob-detail-prices">
                 <strong className="mob-detail-price">{formatPrice(unitPrice)}</strong>
                 {hasDiscount && <del className="mob-detail-old-price">{formatPrice(originalPrice)}</del>}
               </div>
-              {Number(product.rating) > 0 && <span className="mob-detail-rating">★ {Number(product.rating).toFixed(1)}</span>}
             </div>
             <p className={`mob-detail-stock ${stock > 0 ? 'available' : 'unavailable'}`}>
               <span aria-hidden="true" />
@@ -2749,16 +2663,6 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
                 ? `${tr('Choose options')} · ${Math.max(0, Number(product.stock) || 0)} ${tr('available')}`
                 : stock > 0 ? `${tr('In Stock')} · ${stock} ${tr('available')}` : tr('Out of stock')}
             </p>
-            {product.sku && <p className="mob-detail-sku">{tr('Product code')}: {product.sku}</p>}
-            <p className="mob-detail-description">
-              {(language === 'my' ? product.descriptionMy : product.description) || tr('No product description provided.')}
-            </p>
-            {(product.material || product.subcategory) && (
-              <div className="mob-detail-meta">
-                {product.subcategory && <span>{product.subcategory}</span>}
-                {product.material && <span>{tr('Materials')}: {product.material}</span>}
-              </div>
-            )}
           </section>
 
           {colors.length > 0 && (
@@ -2799,49 +2703,6 @@ function MobileProductDetailSheet({ product, products, cart, cartCount, wished, 
             </section>
           )}
 
-          {product.careInformation && (
-            <section className="mob-detail-extra">
-              <h2>{tr('Care information')}</h2>
-              <p>{product.careInformation}</p>
-            </section>
-          )}
-
-          {Number(product.reviewsCount) > 0 && (
-            <section className="mob-detail-extra">
-              <h2>{tr('Customer reviews')}</h2>
-              <p>{Number(product.rating) > 0 ? `★ ${Number(product.rating).toFixed(1)} · ` : ''}{product.reviewsCount} {tr('customer reviews')}</p>
-            </section>
-          )}
-
-          {products.some((item) => String(item.id) !== String(product.id) && item.category === product.category) && (
-            <section className="mob-detail-related">
-              <h2>{tr('You may also like')}</h2>
-              <div className="mob-related-products">
-                {products.filter((item) => String(item.id) !== String(product.id) && item.category === product.category).slice(0, 6).map((item) => (
-                  <button key={item.id} onClick={() => onSelectProduct(item)}>
-                    <img src={item.image} alt="" />
-                    <span>{item.name}</span>
-                    <strong>{formatPrice(item.price)}</strong>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {recentlyViewedProducts.length > 0 && (
-            <section className="mob-detail-related">
-              <h2>{tr('Recently viewed')}</h2>
-              <div className="mob-related-products">
-                {recentlyViewedProducts.map((item) => (
-                  <button key={item.id} onClick={() => onSelectProduct(item)}>
-                    <img src={item.image} alt="" />
-                    <span>{item.name}</span>
-                    <strong>{formatPrice(item.price)}</strong>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
         </div>
 
         <footer className="mob-detail-action-bar">

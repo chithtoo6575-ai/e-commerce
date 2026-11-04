@@ -1,6 +1,7 @@
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 
+import '../config/env.dart';
 import '../models/banner.dart';
 
 /// Dynamic banner image slider with auto-play, infinite loop, manual swipe,
@@ -24,6 +25,45 @@ class BannerSlider extends StatefulWidget {
 class _BannerSliderState extends State<BannerSlider> {
   int _current = 0;
   final CarouselSliderController _controller = CarouselSliderController();
+
+  Widget _buildBannerImage(BannerItem banner) {
+    final source = banner.image.trim();
+    final uri = Uri.tryParse(source);
+    if (uri == null) {
+      return _brokenImage();
+    }
+
+    if (uri.scheme == 'data') {
+      try {
+        return Image.memory(
+          UriData.fromUri(uri).contentAsBytes(),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _brokenImage(),
+        );
+      } on FormatException catch (error) {
+        debugPrint('[banners] Invalid banner image data: $error');
+        return _brokenImage();
+      }
+    }
+
+    final imageUri = uri.hasScheme
+        ? uri
+        : Uri.parse(Env.apiBaseUrl).resolve(source);
+    return Image.network(
+      imageUri.toString(),
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, error) {
+        debugPrint('[banners] Unable to render ${imageUri.path}: $error');
+        return _brokenImage();
+      },
+    );
+  }
+
+  Widget _brokenImage() => Container(
+        color: Colors.grey.shade300,
+        alignment: Alignment.center,
+        child: const Icon(Icons.broken_image, size: 40),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -64,15 +104,7 @@ class _BannerSliderState extends State<BannerSlider> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      banner.image,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey.shade300,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image, size: 40),
-                      ),
-                    ),
+                    _buildBannerImage(banner),
                     if (banner.altText != null && banner.altText!.isNotEmpty)
                       Positioned(
                         left: 16,

@@ -749,7 +749,6 @@ textarea {
 }
 
 .search-bar,
-.coupon-row,
 .step-actions {
   display: flex;
   gap: 0.55rem;
@@ -919,29 +918,6 @@ textarea {
 }
 
 .desktop-cart-remove:hover {
-  color: #b23b38;
-}
-
-.desktop-cart-screen .coupon-row {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr);
-  gap: .5rem;
-  max-width: 420px;
-}
-
-.desktop-cart-screen .coupon-row input {
-  min-width: 0;
-  border: 1px solid #e4e7eb;
-  border-radius: 11px;
-  padding: .7rem .85rem;
-  text-transform: uppercase;
-}
-
-.desktop-cart-screen .coupon-row .promo-valid {
-  color: #27734c;
-}
-
-.desktop-cart-screen .coupon-row .promo-invalid {
   color: #b23b38;
 }
 

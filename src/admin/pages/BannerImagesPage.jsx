@@ -90,6 +90,7 @@ export default function BannerImagesPage({
                   <button
                     className="admin-icon-btn"
                     title={adminT("Live Preview")}
+                    aria-label={adminT("Live Preview")}
                     onClick={() => setPreviewBanner(banner)}
                   >
                     <IconEye size={15} />
@@ -97,6 +98,7 @@ export default function BannerImagesPage({
                   <button
                     className="admin-icon-btn"
                     title={adminT("Edit Banner")}
+                    aria-label={adminT("Edit Banner")}
                     onClick={() => setEditingBanner({ ...banner })}
                   >
                     <IconEdit size={15} />
@@ -104,6 +106,7 @@ export default function BannerImagesPage({
                   <button
                     className="admin-icon-btn btn-danger-hover"
                     title={adminT("Delete Banner")}
+                    aria-label={adminT("Delete Banner")}
                     onClick={() => setDeleteConfirmId(banner.id)}
                   >
                     <IconTrash size={15} />

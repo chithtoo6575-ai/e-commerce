@@ -167,6 +167,8 @@ export default function PaymentMethodsPage({
                           <button
                             className="admin-btn-secondary btn-sm"
                             type="button"
+                            title={adminT('Edit')}
+                            aria-label={adminT('Edit')}
                             disabled={saving}
                             onClick={() => setEditingMethod({ ...method })}
                           >
@@ -176,6 +178,8 @@ export default function PaymentMethodsPage({
                           <button
                             className="admin-btn-danger btn-sm"
                             type="button"
+                            title={adminT('Delete')}
+                            aria-label={adminT('Delete')}
                             disabled={saving}
                             onClick={() => setDeleteConfirmId(method.id)}
                           >

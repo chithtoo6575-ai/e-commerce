@@ -346,6 +346,7 @@ export default function OrdersPage({
                         <button
                           className="admin-icon-btn"
                           title={adminT("View order details")}
+                          aria-label={adminT("View order details")}
                           onClick={() => setSelectedOrder(order)}
                         >
                           <IconEye size={15} />
@@ -1018,25 +1019,24 @@ export function OrderDetailDrawer({
 
           <section className="order-voucher" aria-label={adminT('Delivery parcel voucher')}>
             <header className="order-voucher-header">
+              <img className="order-voucher-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt={adminT('H logo')} />
               <div>
-                <span>{adminT('Delivery parcel voucher')}</span>
-                <h2>#{order.orderNumber || order.id}</h2>
-                {/* Only rendered on paper: receipt-size date / status line. */}
+                <p className="order-voucher-success">{adminT('Order Placed Successfully!')}</p>
+                <span>{adminT('Htoo Online Shop')}</span>
+                <h2>{adminT('Order Number')}: #{order.orderNumber || order.id}</h2>
                 <p className="order-voucher-print-meta">
-                  {purchaseDate} · {adminT(order.status || 'New')} · {adminT(deliveryMethodLabel)}
+                  {purchaseDate} · {adminT(deliveryMethodLabel)}
                 </p>
               </div>
-              <img className="order-voucher-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt={adminT('H logo')} />
-
               <div className="order-voucher-header-details">
-                <div className="order-voucher-address-block">
-                  <h3>{adminT('Delivery address')}</h3>
-                  <address>{customerAddress.length ? customerAddress.map((line, index) => <span key={`${line}-${index}`}>{line}</span>) : adminT('No street address specified.')}</address>
-                </div>
                 <div className="order-voucher-customer-block">
-                  <h3>{adminT('Customer details')}</h3>
-                  <p><strong>{order.customer?.name || adminT('Guest User')}</strong></p>
-                  <p>{order.customer?.phone || adminT('N/A')}</p>
+                  <h3>{adminT('Customer Details')}</h3>
+                  <p><strong>{adminT('Name')}:</strong> {order.customer?.name || adminT('Guest User')}</p>
+                  <p><strong>{adminT('Phone Number')}:</strong> {order.customer?.phone || adminT('N/A')}</p>
+                </div>
+                <div className="order-voucher-address-block">
+                  <h3>{adminT('Delivery Address')}</h3>
+                  <address>{customerAddress.length ? customerAddress.map((line, index) => <span key={`${line}-${index}`}>{line}</span>) : adminT('No street address specified.')}</address>
                 </div>
               </div>
             </header>
@@ -1055,15 +1055,15 @@ export function OrderDetailDrawer({
                 <tbody>
                   {items.map((item, index) => (
                     <tr key={`${item.productId || item.id || item.sku || item.name}-${index}`}>
-                      <td>{item.name || adminT('Item')}</td>
-                      <td>{[item.sku, item.variants?.size, item.variants?.color].filter(Boolean).join(' / ') || '—'}</td>
-                      <td>{formatMoney(item.price)}</td>
-                      <td>{Number(item.quantity || 1)}</td>
-                      <td>{formatMoney(item.lineTotal ?? Number(item.price || 0) * Number(item.quantity || 1))}</td>
+                      <td data-label={adminT('Item Name')}>{item.name || adminT('Item')}</td>
+                      <td data-label={adminT('SKU / Variant')}>{[item.sku, item.variants?.size, item.variants?.color].filter(Boolean).join(' / ') || '—'}</td>
+                      <td data-label={adminT('Unit Price')}>{formatMoney(item.price)}</td>
+                      <td data-label={adminT('Quantity')}>{Number(item.quantity || 1)}</td>
+                      <td data-label={adminT('Total Price')}>{formatMoney(item.lineTotal ?? Number(item.price || 0) * Number(item.quantity || 1))}</td>
                     </tr>
                   ))}
                   {!items.length && (
-                    <tr><td colSpan="5">{adminT('No items recorded for this order.')}</td></tr>
+                    <tr><td colSpan="5" data-label="">{adminT('No items recorded for this order.')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1074,8 +1074,8 @@ export function OrderDetailDrawer({
                 <div><span>{adminT('Total item count')}</span><strong>{totalItemCount}</strong></div>
                 <div><span>{adminT('Total order amount')}</span><strong>{formatMoney(subtotal)}</strong></div>
                 <div><span>{adminT('Shipping / Delivery Fees')}</span><strong>{formatMoney(deliveryFee)}</strong></div>
-                {discount > 0 && <div><span>{adminT('Discount')}</span><strong>−{formatMoney(discount)}</strong></div>}
                 <div className="order-voucher-grand-total"><span>{adminT('Grand total')}</span><strong>{formatMoney(grandTotal)}</strong></div>
+                <div className="order-voucher-payment-method"><span>{adminT('Payment Method')}</span><strong>{/kbz\s*pay/i.test(String(order.paymentMethod || '')) ? 'KBZPay' : order.paymentMethod || 'KBZPay'}</strong></div>
               </div>
             </div>
           </section>

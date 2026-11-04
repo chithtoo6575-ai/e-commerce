@@ -103,6 +103,7 @@ export default function NotificationsPage({
                         <button
                           className="admin-icon-btn"
                           title={adminT("Edit")}
+                          aria-label={adminT("Edit")}
                           onClick={() => setEditingNotification({ ...notif })}
                         >
                           <IconEdit size={15} />
@@ -110,6 +111,7 @@ export default function NotificationsPage({
                         <button
                           className="admin-icon-btn btn-danger-hover"
                           title={adminT("Delete")}
+                          aria-label={adminT("Delete")}
                           onClick={() => setDeleteConfirmId(notif.id)}
                         >
                           <IconTrash size={15} />

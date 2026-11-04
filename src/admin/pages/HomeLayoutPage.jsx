@@ -95,6 +95,7 @@ export default function HomeLayoutPage({
                           disabled={isFirst}
                           onClick={() => handleMove(index, -1)}
                           title={adminT("Move up")}
+                          aria-label={adminT("Move up")}
                         >
                           <IconChevronUp size={14} />
                         </button>
@@ -103,6 +104,7 @@ export default function HomeLayoutPage({
                           disabled={isLast}
                           onClick={() => handleMove(index, 1)}
                           title={adminT("Move down")}
+                          aria-label={adminT("Move down")}
                         >
                           <IconChevronDown size={14} />
                         </button>

@@ -329,6 +329,7 @@ export default function DashboardPage({
                       <button
                         className="admin-icon-btn"
                         title={adminT("View order details")}
+                        aria-label={adminT("View order details")}
                         onClick={() => onOpenOrder?.(order)}
                       >
                         <IconEye size={15} />

@@ -434,6 +434,7 @@ export default function OrderDetailsPage({
                       <button
                         className="admin-icon-btn"
                         title={adminT("View order details")}
+                        aria-label={adminT("View order details")}
                         onClick={() => setSelectedOrder(row.order)}
                       >
                         <IconEye size={15} />

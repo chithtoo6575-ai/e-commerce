@@ -153,6 +153,7 @@ export default function SubCategoriesPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("Edit sub category")}
+                            aria-label={adminT("Edit sub category")}
                             onClick={() => setEditingSubCategory({ ...item })}
                           >
                             <IconEdit size={15} />
@@ -160,6 +161,7 @@ export default function SubCategoriesPage({
                           <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete sub category")}
+                            aria-label={adminT("Delete sub category")}
                             onClick={() => setDeleteConfirmId(item.id)}
                           >
                             <IconTrash size={15} />

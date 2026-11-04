@@ -153,7 +153,7 @@ export const adminStore = {
 
   getBanners() {
     const banners = getStored('banners', SEED_BANNERS)
-    return Array.isArray(banners) && banners.length ? banners : SEED_BANNERS
+    return Array.isArray(banners) ? banners : SEED_BANNERS
   },
   saveBanners(items) {
     setStored('banners', items)

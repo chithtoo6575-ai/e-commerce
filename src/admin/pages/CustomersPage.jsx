@@ -203,6 +203,7 @@ export default function CustomersPage({
                         <button
                           className="admin-icon-btn"
                           title={adminT("View customer profile")}
+                          aria-label={adminT("View customer profile")}
                           onClick={() => setSelectedCustomer(cust)}
                         >
                           <IconEye size={15} />

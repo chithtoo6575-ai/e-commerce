@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Centralized, typed access to environment variables.
@@ -8,10 +9,19 @@ class Env {
 
   static String get supabaseUrl => _required('SUPABASE_URL');
   static String get supabaseAnonKey => _required('SUPABASE_ANON_KEY');
-  static String get apiBaseUrl =>
-      dotenv.env['API_BASE_URL']?.trim().isNotEmpty == true
-          ? dotenv.env['API_BASE_URL']!.trim()
-          : 'http://localhost:8787';
+  static String get apiBaseUrl {
+    final configuredUrl = dotenv.env['API_BASE_URL']?.trim();
+    final url = configuredUrl?.isNotEmpty == true
+        ? configuredUrl!
+        : 'http://localhost:8787';
+    final uri = Uri.parse(url);
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+      return uri.replace(host: '10.0.2.2').toString();
+    }
+    return url;
+  }
   static String get telegramBotToken => _required('TELEGRAM_BOT_TOKEN');
   static String get telegramBotUsername {
     final raw = _required('TELEGRAM_BOT_USERNAME');

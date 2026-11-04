@@ -92,6 +92,7 @@ export default function HomeSectionsPage({
                           disabled={index === 0}
                           onClick={() => handleMove(index, -1)}
                           title={adminT("Move up")}
+                          aria-label={adminT("Move up")}
                         >
                           <IconChevronUp size={14} />
                         </button>
@@ -100,6 +101,7 @@ export default function HomeSectionsPage({
                           disabled={index === sortedSections.length - 1}
                           onClick={() => handleMove(index, 1)}
                           title={adminT("Move down")}
+                          aria-label={adminT("Move down")}
                         >
                           <IconChevronDown size={14} />
                         </button>
@@ -131,6 +133,7 @@ export default function HomeSectionsPage({
                         <button
                           className="admin-icon-btn"
                           title={adminT("Edit section")}
+                          aria-label={adminT("Edit section")}
                           onClick={() => setEditingSection({ ...sec })}
                         >
                           <IconEdit size={15} />
@@ -138,6 +141,7 @@ export default function HomeSectionsPage({
                         <button
                           className="admin-icon-btn btn-danger-hover"
                           title={adminT("Delete section")}
+                          aria-label={adminT("Delete section")}
                           onClick={() => setDeleteConfirmId(sec.id)}
                         >
                           <IconTrash size={15} />

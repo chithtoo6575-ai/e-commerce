@@ -141,6 +141,7 @@ export default function ShippingRatesPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("Edit rate")}
+                            aria-label={adminT("Edit rate")}
                             onClick={() => setEditingRate({ ...rate })}
                           >
                             <IconEdit size={15} />
@@ -148,6 +149,7 @@ export default function ShippingRatesPage({
                           <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete rate")}
+                            aria-label={adminT("Delete rate")}
                             onClick={() => setDeleteConfirmId(rate.id)}
                           >
                             <IconTrash size={15} />

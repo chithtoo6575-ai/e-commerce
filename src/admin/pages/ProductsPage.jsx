@@ -350,6 +350,7 @@ export default function ProductsPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("View product details")}
+                            aria-label={adminT("View product details")}
                             onClick={() => setViewingProduct(p)}
                           >
                             <IconEye size={15} />
@@ -357,6 +358,7 @@ export default function ProductsPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("Edit product")}
+                            aria-label={adminT("Edit product")}
                             onClick={() => setEditingProduct({ ...p })}
                           >
                             <IconEdit size={15} />
@@ -364,6 +366,7 @@ export default function ProductsPage({
                           <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete product")}
+                            aria-label={adminT("Delete product")}
                             onClick={() => setDeleteConfirmId(p.id)}
                           >
                             <IconTrash size={15} />
@@ -508,9 +511,15 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const fileInputRef = useRef(null)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [selectedFileName, setSelectedFileName] = useState('')
-  const [previewUrl, setPreviewUrl] = useState(() => product.image || (Array.isArray(product.images) ? product.images[0] : '') || '')
+  const [imageItems, setImageItems] = useState(() => {
+    const images = Array.isArray(product.images) && product.images.length
+      ? product.images
+      : product.image ? [product.image] : []
+    return [...new Set(images.filter((image) => typeof image === 'string' && image.trim()))]
+      .slice(0, 5)
+      .map((url) => ({ url, file: null, fileName: '' }))
+  })
+  const [imageUrlInput, setImageUrlInput] = useState('')
   const [imageError, setImageError] = useState('')
   const variantStockOptions = getVariantStockOptions({
     availableVariants: {
@@ -523,43 +532,45 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     return Number.isSafeInteger(Number(quantity)) && String(quantity).trim() !== '' ? total + Number(quantity) : total
   }, 0)
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
     setImageError('')
-
+    if (imageItems.length + files.length > 5) {
+      setImageError('A product can have up to 5 images.')
+      return
+    }
     const allowedMime = ['image/jpeg', 'image/png', 'image/webp']
-    const hasValidExt = /\.(jpe?g|png|webp)$/i.test(file.name)
-    if (!allowedMime.includes(file.type) && !hasValidExt) {
-      setImageError('Only JPG, PNG, and WebP images are supported.')
+    const invalidFile = files.find((file) => (
+      (!allowedMime.includes(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) ||
+      file.size > 5 * 1024 * 1024
+    ))
+    if (invalidFile) {
+      setImageError(invalidFile.size > 5 * 1024 * 1024
+        ? `${invalidFile.name} is larger than 5 MB.`
+        : `${invalidFile.name} is not a supported JPG, PNG, or WebP image.`)
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError('Image file must be 5 MB or smaller.')
-      return
+    try {
+      const newItems = await Promise.all(files.map((file) => new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => typeof reader.result === 'string'
+          ? resolve({ url: reader.result, file, fileName: file.name })
+          : reject(new Error(`Unable to preview ${file.name}.`))
+        reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`))
+        reader.readAsDataURL(file)
+      })))
+      setImageItems((current) => [...current, ...newItems])
+    } catch (readError) {
+      setImageError(readError.message || 'Failed to read selected images.')
     }
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setSelectedFile(file)
-        setSelectedFileName(file.name)
-        setPreviewUrl(reader.result)
-        setFormData((prev) => ({ ...prev, image: reader.result }))
-      }
-    }
-    reader.onerror = () => setImageError('Failed to read image file.')
-    reader.readAsDataURL(file)
   }
 
-  const handleRemoveImage = () => {
-    setSelectedFile(null)
-    setSelectedFileName('')
-    setPreviewUrl('')
+  const handleRemoveImage = (index) => {
+    setImageItems((current) => current.filter((_, itemIndex) => itemIndex !== index))
     setImageError('')
-    setFormData((prev) => ({ ...prev, image: '' }))
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleSubmit = async (e) => {
@@ -582,9 +593,13 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
         variantStock[option.key] = quantity
       }
     }
-    if (!previewUrl && !formData.image) {
+    if (!imageItems.length) {
       setImageError('Product image is required.')
       errs.image = 'Product image is required'
+    }
+    if (imageItems.length > 5) {
+      setImageError('A product can have up to 5 images.')
+      errs.image = 'A product can have up to 5 images.'
     }
 
     if (Object.keys(errs).length > 0) {
@@ -593,31 +608,28 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     }
 
     setSaving(true)
-    let finalImageUrl = formData.image
-
-    // If a new local image was selected, upload it through the API to get a persistent server URL
-    if (selectedFile && previewUrl?.startsWith('data:image/')) {
-      try {
+    let finalImages
+    try {
+      finalImages = await Promise.all(imageItems.map(async ({ url, file, fileName }) => {
+        if (!file) return url
         const uploadRes = await adminFetch('/api/admin/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            file: previewUrl,
-            filename: selectedFile.name
-          })
+          body: JSON.stringify({ file: url, filename: fileName })
         })
         const uploadResult = await uploadRes.json()
         if (!uploadRes.ok || !uploadResult.url) {
-          throw new Error(uploadResult.error || 'Failed to upload product image.')
+          throw new Error(uploadResult.error || `Failed to upload ${fileName}.`)
         }
-        finalImageUrl = uploadResult.url
-      } catch (uploadErr) {
-        setImageError(uploadErr.message || 'Image upload failed.')
-        setSaving(false)
-        return
-      }
+        return uploadResult.url
+      }))
+    } catch (uploadErr) {
+      setImageError(uploadErr.message || 'Image upload failed.')
+      setSaving(false)
+      return
     }
 
+    const finalImageUrl = finalImages[0] || ''
     const payload = {
       ...formData,
       availableVariants: {
@@ -628,7 +640,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
       trackVariantStock: undefined,
       variantColors: undefined,
       image: finalImageUrl,
-      images: [finalImageUrl, ...(Array.isArray(formData.images) ? formData.images.filter((img) => img !== formData.image && img !== finalImageUrl) : [])],
+      images: finalImages,
       name: formData.nameEn,
       price: Number(formData.price),
       salePrice: Number(formData.salePrice || 0),
@@ -774,48 +786,39 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
           </div>
 
           <div className="form-group product-image-field-group">
-            <label>{adminT("Product Image *")}</label>
+            <label>{adminT("Product Images *")}</label>
             <input
               type="file"
               ref={fileInputRef}
+              multiple
               accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
 
-            {previewUrl ? (
-              <div className="product-image-card">
-                <div className="product-image-preview-frame">
-                  <img src={previewUrl} alt={formData.nameEn || 'Product preview'} />
-                </div>
-                <div className="product-image-info">
-                  {selectedFileName ? (
-                    <div className="product-image-filename">
-                      <strong>{adminT("Selected file:")}</strong> <span>{selectedFileName}</span>
-                    </div>
-                  ) : (
-                    <div className="product-image-filename">
-                      <strong>{adminT("Current image:")}</strong> <span>{previewUrl.startsWith('data:') ? 'Image uploaded' : (previewUrl.length > 40 ? previewUrl.slice(0, 40) + '...' : previewUrl)}</span>
-                    </div>
-                  )}
-                  <span className="text-muted text-xs">{adminT("Supports JPG, PNG, WebP (Max 5 MB)")}</span>
-                  <div className="product-image-actions">
+            {imageItems.length > 0 && (
+              <div className="product-images-preview-grid">
+                {imageItems.map((item, index) => (
+                  <div className="product-image-preview-card" key={`${item.url}-${index}`}>
+                    <img src={item.url} alt={`${formData.nameEn || 'Product'} image ${index + 1}`} />
+                    {index === 0 && <span className="product-image-primary-badge">{adminT('Primary')}</span>}
                     <button
                       type="button"
-                      className="admin-btn-secondary btn-sm"
-                      onClick={() => fileInputRef.current?.click()}
+                      className="admin-btn-danger btn-sm product-image-remove-button"
+                      onClick={() => handleRemoveImage(index)}
+                      aria-label={`${adminT('Remove image')} ${index + 1}`}
                     >
-                      {adminT("Replace Image")}
+                      {adminT('Remove')}
                     </button>
-                    <button
-                      type="button"
-                      className="admin-btn-danger btn-sm"
-                      onClick={handleRemoveImage}
-                    >{' ' + adminT("Remove Image") + ' '}</button>
+                    <span className="product-image-preview-name">
+                      {item.fileName || (item.url.startsWith('data:') ? adminT('New image') : item.url)}
+                    </span>
                   </div>
-                </div>
+                ))}
               </div>
-            ) : (
+            )}
+
+            {imageItems.length < 5 ? (
               <div
                 className="product-image-dropzone"
                 onClick={() => fileInputRef.current?.click()}
@@ -826,29 +829,34 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                   onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }}
                 >
                   <IconPlus size={16} />
-                  <span>{adminT("Upload Image")}</span>
+                  <span>{adminT("Add Images")} ({imageItems.length}/5)</span>
                 </button>
-                <p className="dropzone-hint">{adminT("Select a JPG, PNG, or WebP file from your computer or phone (Max 5 MB)")}</p>
+                <p className="dropzone-hint">{adminT("Select JPG, PNG, or WebP files (up to 5 images, 5 MB each)")}</p>
               </div>
-            )}
+            ) : <p className="text-muted text-xs">{adminT("Maximum of 5 images reached.")}</p>}
 
             {imageError && <span className="form-error" role="alert">{adminT(imageError)}</span>}
 
-            {/* Optional URL input for backward compatibility */}
             <details className="mt-2 text-xs">
-              <summary className="text-muted cursor-pointer">{adminT("Or use an image URL manually")}</summary>
+              <summary className="text-muted cursor-pointer">{adminT("Or add an image URL manually")}</summary>
               <input
                 type="text"
                 className="mt-1"
                 placeholder={adminT("https://... or /uploads/...")}
-                value={formData.image.startsWith('data:') ? '' : formData.image}
-                onChange={(e) => {
-                  setSelectedFile(null)
-                  setSelectedFileName('')
-                  setPreviewUrl(e.target.value)
-                  setFormData({ ...formData, image: e.target.value })
-                }}
+                value={imageUrlInput}
+                onChange={(e) => setImageUrlInput(e.target.value)}
+                disabled={imageItems.length >= 5}
               />
+              <button
+                type="button"
+                className="admin-btn-secondary btn-sm mt-1"
+                disabled={imageItems.length >= 5 || !imageUrlInput.trim()}
+                onClick={() => {
+                  setImageItems((current) => [...current, { url: imageUrlInput.trim(), file: null, fileName: '' }])
+                  setImageUrlInput('')
+                  setImageError('')
+                }}
+              >{adminT("Add URL")}</button>
             </details>
           </div>
 

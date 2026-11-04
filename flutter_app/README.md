@@ -11,9 +11,11 @@ Migrated from the React/Vite web storefront. Supports iOS, Android, and Web.
 ## Setup
 1. Copy `.env.example` to `.env` and fill in values:
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-   - `API_BASE_URL` (default `http://localhost:8787`)
+   - `API_BASE_URL` (default `http://localhost:8787`; Android emulators map localhost to `10.0.2.2`)
    - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` (NO leading `@`),
      `TELEGRAM_CHAT_ID`
+   - For a physical Android device, set `API_BASE_URL` to your computer's LAN
+     address or to the deployed API URL.
 2. Install dependencies:
    ```bash
    flutter pub get

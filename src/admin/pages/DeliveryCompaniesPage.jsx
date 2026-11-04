@@ -99,6 +99,7 @@ export default function DeliveryCompaniesPage({
                   <button
                     className="admin-icon-btn"
                     title={adminT("Edit Courier")}
+                    aria-label={adminT("Edit Courier")}
                     onClick={() => setEditingCompany({ ...company })}
                   >
                     <IconEdit size={15} />
@@ -106,6 +107,7 @@ export default function DeliveryCompaniesPage({
                   <button
                     className="admin-icon-btn btn-danger-hover"
                     title={adminT("Delete Courier")}
+                    aria-label={adminT("Delete Courier")}
                     onClick={() => setDeleteConfirmId(company.id)}
                   >
                     <IconTrash size={15} />

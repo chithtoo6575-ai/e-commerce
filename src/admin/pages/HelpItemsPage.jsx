@@ -146,6 +146,7 @@ export default function HelpItemsPage({
                             disabled={index === 0}
                             onClick={() => handleMove(index, -1)}
                             title={adminT("Move up")}
+                            aria-label={adminT("Move up")}
                           >
                             <IconChevronUp size={14} />
                           </button>
@@ -154,6 +155,7 @@ export default function HelpItemsPage({
                             disabled={index === filteredItems.length - 1}
                             onClick={() => handleMove(index, 1)}
                             title={adminT("Move down")}
+                            aria-label={adminT("Move down")}
                           >
                             <IconChevronDown size={14} />
                           </button>
@@ -182,6 +184,7 @@ export default function HelpItemsPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("Edit FAQ")}
+                            aria-label={adminT("Edit FAQ")}
                             onClick={() => setEditingItem({ ...item })}
                           >
                             <IconEdit size={15} />
@@ -189,6 +192,7 @@ export default function HelpItemsPage({
                           <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete FAQ")}
+                            aria-label={adminT("Delete FAQ")}
                             onClick={() => setDeleteConfirmId(item.id)}
                           >
                             <IconTrash size={15} />

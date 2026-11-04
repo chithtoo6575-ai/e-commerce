@@ -150,6 +150,7 @@ export default function CategoriesPage({
                           <button
                             className="admin-icon-btn"
                             title={adminT("Edit category")}
+                            aria-label={adminT("Edit category")}
                             onClick={() => setEditingCategory({ ...c })}
                           >
                             <IconEdit size={15} />
@@ -157,6 +158,7 @@ export default function CategoriesPage({
                           <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete category")}
+                            aria-label={adminT("Delete category")}
                             onClick={() => setDeleteConfirmId(c.id || c.name)}
                           >
                             <IconTrash size={15} />

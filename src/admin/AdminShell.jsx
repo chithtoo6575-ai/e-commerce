@@ -206,7 +206,7 @@ export default function AdminShell({
     adminFetch('/api/admin/banners')
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (data && Array.isArray(data.banners) && data.banners.length) {
+        if (data && Array.isArray(data.banners)) {
           setBanners(data.banners)
           adminStore.saveBanners(data.banners)
         }

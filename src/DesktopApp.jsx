@@ -588,11 +588,6 @@ export default function DesktopApp({
             {!cart.length && <p>{tr('Your cart is empty.')}</p>}
           </div>
 
-          <div className="coupon-row">
-            <input value={coupon} onChange={(event) => setCoupon(event.target.value)} placeholder={tr('Promo code')} aria-label={tr('Promo code')} />
-            {coupon && <small className={activePromotion ? 'promo-valid' : 'promo-invalid'}>{activePromotion ? `${activePromotion.name} ${tr('applied')}` : tr('No active promotion matches this code')}</small>}
-          </div>
-
           <article className="card-block">
             <h4>{tr('Order Summary')}</h4>
             <p>{tr('Subtotal')}: {formatPrice(cartSubtotal)}</p>

@@ -635,18 +635,18 @@ function cleanPromotion(input, existing = {}) {
   return promotion
 }
 function persistProductImages(rawImageInput, rawImagesInput, productName) {
-  let rawImage = typeof rawImageInput === 'string' ? rawImageInput.trim() : ''
-  if (rawImage.startsWith('data:image/')) {
-    const saved = saveImageToDisk(rawImage, productName || 'product')
-    if (saved) rawImage = saved
-  }
-  let images = Array.isArray(rawImagesInput)
-    ? rawImagesInput.map((img) => typeof img === 'string' && img.startsWith('data:image/') ? (saveImageToDisk(img, productName || 'product') || img) : img).filter((img) => typeof img === 'string' && img.trim().length > 0)
-    : []
-  if (rawImage && !images.includes(rawImage)) {
-    images = [rawImage, ...images]
-  }
-  return { image: rawImage || images[0] || '', images }
+  const rawImage = typeof rawImageInput === 'string' ? rawImageInput.trim() : ''
+  const rawImages = Array.isArray(rawImagesInput) ? rawImagesInput : []
+  const uniqueImages = [...new Set([rawImage, ...rawImages]
+    .filter((image) => typeof image === 'string')
+    .map((image) => image.trim())
+    .filter(Boolean))]
+  if (uniqueImages.length > 5) invalidAdminInput('A product can have up to 5 images.')
+  const images = uniqueImages.map((image) => {
+    if (!image.startsWith('data:image/')) return image
+    return saveImageToDisk(image, productName || 'product') || image
+  })
+  return { image: images[0] || '', images }
 }
 function verifyVariantInventory(variantStockInput, parsedSizes, availableColors, existingId, orders = []) {
   if (variantStockInput == null) return null
@@ -933,20 +933,15 @@ function telegramOrderKeyboard(order) {
   return { inline_keyboard: keyboard }
 }
 function telegramOrderMessage(order) {
-  const headings = {
-    New: '🛍️ NEW ORDER',
-    Confirmed: '🟢 ORDER CONFIRMED',
-    Packing: '📦 ORDER PACKING',
-    Shipped: '🚚 ORDER SHIPPED',
-    Delivered: '✅ ORDER DELIVERED',
-    Cancelled: '❌ ORDER CANCELLED'
-  }
+  const heading = order.status === 'New'
+    ? '🛍️ NEW ORDER'
+    : `🛍️ ORDER UPDATE${order.status ? ` — ${order.status.toUpperCase()}` : ''}`
   const paymentStatus = order.paymentStatus === 'Confirmed' ? 'Paid' : order.paymentStatus === 'Not Required' ? 'Not Required' : order.paymentStatus === 'Rejected' ? 'Rejected' : 'Pending'
-  const items = (order.items || []).map((item) => `• ${item.name} × ${item.quantity}`).join('\n') || '• No items'
+  const items = (order.items || []).map((item) => `  • ${item.name} × ${item.quantity}`).join('\n') || '  • No items'
   const address = String(order.customer?.address || order.shippingAddress || '').trim()
-  const cancellationReason = order.status === 'Cancelled' ? `\nReason: ${order.cancellationReason || 'Cancelled by shop'}` : ''
-  return `${headings[order.status] || 'ORDER UPDATE'}\n\nOrder: #${order.orderNumber || order.id}\n\nCustomer: ${order.customer?.name || 'Customer'}\nPhone: ${order.customer?.phone || '-'}\nAddress: ${address || '-'}\n\nItems:\n${items}\n\nSubtotal: ${Math.round(order.subtotal || 0).toLocaleString('en-US')} MMK\nDelivery: ${Math.round(order.deliveryFee || 0).toLocaleString('en-US')} MMK\nDiscount: ${Math.round(order.discount || 0).toLocaleString('en-US')} MMK\n\nTOTAL: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\n\nPayment: ${order.paymentMethod || '-'}\nPayment Status: ${paymentStatus}\n\nOrder Status: ${order.status}${order.trackingNumber ? `
-Tracking: ${order.trackingNumber}` : ''}${cancellationReason}`
+  const cancellationReason = order.status === 'Cancelled' ? `\n⚠️ Cancellation reason: ${order.cancellationReason || 'Cancelled by shop'}` : ''
+  const divider = '━━━━━━━━━━━━━━━━━━'
+  return `${heading}\n${divider}\n\n🧾 Order #: ${order.orderNumber || order.id}\n👤 Customer: ${order.customer?.name || 'Customer'}\n📞 Phone: ${order.customer?.phone || '-'}\n📍 Address: ${address || '-'}\n\n${divider}\n🛒 ITEMS\n${items}\n\n${divider}\n💰 Subtotal: ${Math.round(order.subtotal || 0).toLocaleString('en-US')} MMK\n🚚 Delivery: ${Math.round(order.deliveryFee || 0).toLocaleString('en-US')} MMK\n🏷️ Discount: ${Math.round(order.discount || 0).toLocaleString('en-US')} MMK\n\n💵 TOTAL: ${Math.round(order.total || 0).toLocaleString('en-US')} MMK\n\n💳 Payment Method: ${order.paymentMethod || '-'}\n💰 Payment Status: ${paymentStatus}\n📋 Order Status: ${order.status}${order.trackingNumber ? `\n🚚 Tracking: ${order.trackingNumber}` : ''}${cancellationReason}\n${divider}`
 }
 async function telegramRequest(method, payload) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN

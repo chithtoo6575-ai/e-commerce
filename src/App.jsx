@@ -17,6 +17,19 @@ const ORDER_REQUEST_KEY = 'hto_order_request_key'
 const formatPrice = (amount) => `Ks ${Math.round(amount || 0).toLocaleString('en-US')}`
 let fallbackOrderRequestKey = ''
 
+function mapStorefrontBanner(banner) {
+  return {
+    ...banner,
+    image: banner.image || banner.image_url || banner.imageUrl || '',
+    altText: banner.altText || banner.alt_text || '',
+    altTextMy: banner.altTextMy || banner.alt_text_my || '',
+    link: banner.link || banner.link_url || '',
+    sortOrder: banner.sortOrder ?? banner.sort_order ?? 0,
+    startDate: banner.startDate || banner.starts_on || '',
+    endDate: banner.endDate || banner.ends_on || ''
+  }
+}
+
 // crypto.randomUUID() only exists in secure contexts (https or localhost).
 // When the storefront is opened over the LAN (e.g. http://10.56.125.59:5173)
 // from a phone, randomUUID is undefined and would throw, breaking checkout.
@@ -179,7 +192,17 @@ function writeGuestList(key, value) {
 }
 
 function mapApiProduct(raw) {
-  const images = Array.isArray(raw.images) && raw.images.length ? raw.images : [raw.image || '']
+  const relatedImages = Array.isArray(raw.product_images)
+    ? [...raw.product_images]
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .map((item) => item.url)
+      .filter((url) => typeof url === 'string' && url.trim())
+    : []
+  const imageList = Array.isArray(raw.images) && raw.images.length ? raw.images : relatedImages
+  const images = [...new Set([
+    ...(typeof raw.image === 'string' && raw.image.trim() ? [raw.image] : []),
+    ...imageList.filter((image) => typeof image === 'string' && image.trim())
+  ])]
   const rawVariants = raw.availableVariants || raw.variants || null
   const sizes = Array.isArray(rawVariants?.sizes)
     ? rawVariants.sizes
@@ -206,7 +229,7 @@ function mapApiProduct(raw) {
     oldPrice: raw.discountPrice != null && raw.discountPrice < raw.price ? raw.price : null,
     stock: Number.isInteger(raw.stock) ? raw.stock : 0,
     variantStock: raw.variantStock && typeof raw.variantStock === 'object' ? raw.variantStock : null,
-    image: raw.image || raw.images?.[0] || '',
+    image: images[0] || '',
     images,
     description: raw.descriptionEn || raw.description || '',
     descriptionMy: raw.descriptionMy || '',
@@ -454,9 +477,27 @@ export default function App() {
     })
     shopData.getSettings().then((data) => { if (active && data.car_gate_pickup_fee != null) setSettings({ carGatePickupFee: Number(data.car_gate_pickup_fee) }) }).catch((loadError) => console.warn('[settings] Unable to load store settings.', loadError))
     shopData.getPromotions().then((data) => { if (active) setPromotions(data || []) }).catch((loadError) => console.warn('[promotions] Unable to load promotions.', loadError))
-    shopData.getBanners().then((data) => {
-      if (active && Array.isArray(data) && data.length) setStorefrontBanners(data.map((banner) => ({ ...banner, image: banner.image_url, altText: banner.alt_text, link: banner.link_url, sortOrder: banner.sort_order, startDate: banner.starts_on, endDate: banner.ends_on })))
-    }).catch((loadError) => console.warn('[banners] Unable to load banners.', loadError))
+    const loadBanners = async () => {
+      try {
+        const response = await fetch('/api/banners')
+        const result = await readJsonResponse(response)
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to load banners from the storefront API.'))
+        if (!Array.isArray(result.banners)) throw new Error('The banners API returned invalid data.')
+        if (active) setStorefrontBanners(result.banners.map(mapStorefrontBanner))
+        return
+      } catch (apiError) {
+        console.warn('[banners] Storefront API load failed.', apiError)
+      }
+
+      if (!supabaseConfigured) return
+      try {
+        const data = await shopData.getBanners()
+        if (active && Array.isArray(data)) setStorefrontBanners(data.map(mapStorefrontBanner))
+      } catch (supabaseError) {
+        console.warn('[banners] Supabase load failed.', supabaseError)
+      }
+    }
+    loadBanners()
     return () => {
       active = false
       authListener?.data?.subscription?.unsubscribe()
