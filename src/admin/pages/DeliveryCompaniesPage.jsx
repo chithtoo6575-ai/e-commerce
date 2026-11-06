@@ -17,13 +17,17 @@ export default function DeliveryCompaniesPage({
   const [editingCompany, setEditingCompany] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
 
-  const handleToggleStatus = (company) => {
+  const handleToggleStatus = async (company) => {
     const updated = companies.map((c) =>
       c.id === company.id ? { ...c, status: c.status === 'Active' ? 'Inactive' : 'Active' } : c
     )
-    onSaveCompanies?.(updated)
     const newStatus = company.status === 'Active' ? 'Inactive' : 'Active'
-    showToast?.(`Delivery partner "${company.name}" is now ${newStatus}`, 'info')
+    try {
+      await onSaveCompanies?.(updated)
+      showToast?.(`Delivery partner "${company.name}" is now ${newStatus}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update delivery company.', 'error')
+    }
   }
 
   return (
@@ -124,7 +128,7 @@ export default function DeliveryCompaniesPage({
         <CompanyModal
           company={editingCompany}
           onClose={() => setEditingCompany(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = companies.some((c) => c.id === saved.id)
             let updated
             if (exists) {
@@ -132,9 +136,13 @@ export default function DeliveryCompaniesPage({
             } else {
               updated = [...companies, saved]
             }
-            onSaveCompanies?.(updated)
-            showToast?.(exists ? 'Courier updated' : 'Courier added', 'success')
-            setEditingCompany(null)
+            try {
+              await onSaveCompanies?.(updated)
+              showToast?.(exists ? 'Courier updated' : 'Courier added', 'success')
+              setEditingCompany(null)
+            } catch (saveError) {
+              showToast?.(saveError.message || 'Unable to save delivery company.', 'error')
+            }
           }}
         />
       )}
@@ -146,11 +154,15 @@ export default function DeliveryCompaniesPage({
         message={adminT("Are you sure you want to remove this delivery company?")}
         confirmText={adminT("Delete Partner")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = companies.filter((c) => c.id !== deleteConfirmId)
-          onSaveCompanies?.(updated)
-          showToast?.('Delivery company removed', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveCompanies?.(updated)
+            showToast?.('Delivery company removed', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete delivery company.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />

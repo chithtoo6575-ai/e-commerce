@@ -2204,6 +2204,40 @@ html[data-admin-theme='light'] .brand-mark-logo {
   object-fit: cover;
 }
 
+.admin-category-image-preview,
+.admin-category-table-thumb {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--radius-sm);
+  background: var(--admin-surface);
+}
+
+.admin-category-image-preview {
+  width: 80px;
+  height: 80px;
+  margin-top: 8px;
+}
+
+.admin-category-table-thumb {
+  width: 48px;
+  height: 48px;
+}
+
+.admin-category-image-preview img,
+.admin-category-table-thumb img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
 .product-image-dropzone {
   border: 2px dashed var(--admin-line);
   border-radius: var(--radius-md);

@@ -1,6 +1,5 @@
-# Atelier Market
-
-Responsive React + Vite storefront for fashion, phone accessories, and grocery sellers. The frontend now has a Supabase browser data adapter and a normalized PostgreSQL/RLS migration foundation. The existing legacy Node/SQLite API and admin interface are still present for compatibility; the application has not completed a full migration of checkout, admin, all account flows, Telegram, or payment integrations.
+# HTOO E-commerce
+Responsive React + Vite storefront for HTOO home and living products. The frontend now has a Supabase browser data adapter and a normalized PostgreSQL/RLS migration foundation. The existing legacy Node/SQLite API and admin interface are still present for compatibility; the application has not completed a full migration of checkout, admin, all account flows, Telegram, or payment integrations.
 
 ## Supabase + Vercel migration (new)
 

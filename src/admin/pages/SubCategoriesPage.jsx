@@ -12,6 +12,7 @@ import {
 export default function SubCategoriesPage({
   subCategories = [],
   categories = [],
+  products = [],
   onSaveSubCategory,
   onDeleteSubCategory,
   showToast
@@ -24,18 +25,25 @@ export default function SubCategoriesPage({
   const filteredItems = useMemo(() => {
     return subCategories.filter((item) => {
       const matchSearch = !searchTerm || item.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchParent = parentFilter === 'All' || item.parentCategoryId === parentFilter
+      const parent = categories.find((category) => String(category.id) === String(parentFilter))
+      const matchParent = parentFilter === 'All' ||
+        item.parentCategoryId === parentFilter ||
+        item.parentCategoryId === parent?.name
       return matchSearch && matchParent
     }).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-  }, [subCategories, searchTerm, parentFilter])
+  }, [subCategories, categories, searchTerm, parentFilter])
 
   const handleToggleStatus = async (item) => {
     const updated = {
       ...item,
       status: item.status === 'Active' ? 'Inactive' : 'Active'
     }
-    await onSaveSubCategory?.(updated)
-    showToast?.(`Sub category "${item.name}" is now ${updated.status}`, 'info')
+    try {
+      await onSaveSubCategory?.(updated)
+      showToast?.(`Sub category "${item.name}" is now ${updated.status}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update subcategory status.', 'error')
+    }
   }
 
   return (
@@ -50,11 +58,10 @@ export default function SubCategoriesPage({
           className="admin-btn-gold"
           onClick={() => setEditingSubCategory({
             name: '',
-            parentCategoryId: categories[0]?.name || 'Clothing',
+            parentCategoryId: categories[0]?.id || '',
             image: '',
             status: 'Active',
-            sortOrder: subCategories.length + 1,
-            productCount: 0
+            sortOrder: subCategories.length + 1
           })}
         >
           <IconPlus size={16} />
@@ -88,7 +95,7 @@ export default function SubCategoriesPage({
             >
               <option value="All">{adminT("All Parent Categories")}</option>
               {categories.map((c) => (
-                <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                <option key={c.id || c.name} value={c.id || c.name}>{c.name}</option>
               ))}
             </select>
           </div>
@@ -121,7 +128,7 @@ export default function SubCategoriesPage({
                   return (
                     <tr key={item.id} className="table-row-hover">
                       <td>
-                        <div className="thumb-square-xs">
+                        <div className="admin-category-table-thumb">
                           {item.image ? (
                             <img src={item.image} alt={item.name} />
                           ) : (
@@ -133,10 +140,18 @@ export default function SubCategoriesPage({
                         <strong className="text-primary font-medium">{item.name}</strong>
                       </td>
                       <td>
-                        <span className="category-pill">{item.parentCategoryId}</span>
+                        <span className="category-pill">
+                          {categories.find((category) => String(category.id) === String(item.parentCategoryId) || category.name === item.parentCategoryId)?.name || 'Unknown category'}
+                        </span>
                       </td>
                       <td>
-                        <span className="badge-number-pill">{item.productCount || 0} items</span>
+                        <span className="badge-number-pill">
+                          {products.filter((product) =>
+                            product.subCategoryId === item.id ||
+                            (product.subCategory === item.name &&
+                              (product.categoryId === item.parentCategoryId || product.category === item.parentCategoryId))
+                          ).length} items
+                        </span>
                       </td>
                       <td className="td-mono">{item.sortOrder ?? 1}</td>
                       <td>
@@ -185,7 +200,7 @@ export default function SubCategoriesPage({
           onClose={() => setEditingSubCategory(null)}
           onSave={async (saved) => {
             await onSaveSubCategory?.(saved)
-            showToast?.(saved.id ? 'Sub Category updated' : 'Sub Category created', 'success')
+            showToast?.(editingSubCategory.id ? 'Sub Category updated' : 'Sub Category created', 'success')
             setEditingSubCategory(null)
           }}
         />
@@ -199,9 +214,13 @@ export default function SubCategoriesPage({
         confirmText={adminT("Delete")}
         danger={true}
         onConfirm={async () => {
-          await onDeleteSubCategory?.(deleteConfirmId)
-          showToast?.('Sub Category deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onDeleteSubCategory?.(deleteConfirmId)
+            showToast?.('Sub Category deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (deleteError) {
+            showToast?.(deleteError.message || 'Unable to delete subcategory.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />
@@ -211,13 +230,12 @@ export default function SubCategoriesPage({
 
 function SubCategoryModal({ subCategory, categories, onClose, onSave }) {
   const [formData, setFormData] = useState(() => ({
-    id: subCategory.id || `sub-${Date.now().toString(36)}`,
+    id: subCategory.id || '',
     name: subCategory.name || '',
-    parentCategoryId: subCategory.parentCategoryId || categories[0]?.name || 'Clothing',
+    parentCategoryId: subCategory.parentCategoryId || categories[0]?.id || '',
     image: subCategory.image || '',
     status: subCategory.status || 'Active',
-    sortOrder: subCategory.sortOrder ?? 1,
-    productCount: subCategory.productCount || 0
+    sortOrder: subCategory.sortOrder ?? 1
   }))
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -229,8 +247,14 @@ function SubCategoryModal({ subCategory, categories, onClose, onSave }) {
       return
     }
     setSaving(true)
-    await onSave(formData)
-    setSaving(false)
+    setError('')
+    try {
+      await onSave(formData)
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save subcategory.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -286,7 +310,7 @@ function SubCategoryModal({ subCategory, categories, onClose, onSave }) {
               onChange={(e) => setFormData({ ...formData, image: e.target.value })}
             />
             {formData.image && (
-              <div className="image-preview-box">
+              <div className="admin-category-image-preview">
                 <img src={formData.image} alt={adminT("Preview")} />
               </div>
             )}

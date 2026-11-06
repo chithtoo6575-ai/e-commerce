@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import './AdminTheme.css'
 import ToastContainer from './components/Toast'
 import {
@@ -64,6 +64,9 @@ export default function AdminShell({
   onDeleteProduct,
   onSaveCategory,
   onDeleteCategory,
+  onSaveSubCategory,
+  onDeleteSubCategory,
+  onUpdateCustomerStatus,
   onUpdateOrder,
   language,
   onLanguageChange
@@ -111,7 +114,6 @@ export default function AdminShell({
   }
 
   // Manage Extended Store State
-  const [subCategories, setSubCategories] = useState(() => adminStore.getSubCategories())
   const [localStockMovements] = useState(() => adminStore.getStockMovements())
   const [banners, setBanners] = useState(() => adminStore.getBanners())
   const [homeSections, setHomeSections] = useState(() => adminStore.getHomeSections())
@@ -122,6 +124,89 @@ export default function AdminShell({
   const [notifications, setNotifications] = useState(() => adminStore.getNotifications())
   const [supportChannels, setSupportChannels] = useState(() => adminStore.getSupportChannels())
   const [helpItems, setHelpItems] = useState(() => adminStore.getHelpItems())
+  const storefrontSettingsRef = useRef({
+    homeSections: adminStore.getHomeSections(),
+    homeLayout: adminStore.getHomeLayout(),
+    shippingRates: adminStore.getShippingRates(),
+    deliveryCompanies: adminStore.getDeliveryCompanies(),
+    notifications: adminStore.getNotifications(),
+    helpItems: adminStore.getHelpItems()
+  })
+
+  const applyStorefrontSettings = (settings) => {
+    const saved = {
+      homeSections: Array.isArray(settings.homeSections) ? settings.homeSections : [],
+      homeLayout: Array.isArray(settings.homeLayout) ? settings.homeLayout : [],
+      shippingRates: Array.isArray(settings.shippingRates) ? settings.shippingRates : [],
+      deliveryCompanies: Array.isArray(settings.deliveryCompanies) ? settings.deliveryCompanies : [],
+      notifications: Array.isArray(settings.notifications) ? settings.notifications : [],
+      helpItems: Array.isArray(settings.helpItems) ? settings.helpItems : []
+    }
+    storefrontSettingsRef.current = saved
+    setHomeSections(saved.homeSections)
+    setHomeLayout(saved.homeLayout)
+    setShippingRates(saved.shippingRates)
+    setDeliveryCompanies(saved.deliveryCompanies)
+    setNotifications(saved.notifications)
+    setHelpItems(saved.helpItems)
+    adminStore.saveHomeSections(saved.homeSections)
+    adminStore.saveHomeLayout(saved.homeLayout)
+    adminStore.saveShippingRates(saved.shippingRates)
+    adminStore.saveDeliveryCompanies(saved.deliveryCompanies)
+    adminStore.saveNotifications(saved.notifications)
+    adminStore.saveHelpItems(saved.helpItems)
+  }
+
+  const persistStorefrontSettings = async (changes) => {
+    const settings = { ...storefrontSettingsRef.current, ...changes }
+    const response = await adminFetch('/api/admin/storefront-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to save storefront settings.')
+    if (!result.settings || typeof result.settings !== 'object') throw new Error('The storefront settings API returned invalid data.')
+    applyStorefrontSettings(result.settings)
+    return result.settings
+  }
+
+  useEffect(() => {
+    let active = true
+    const loadSettings = async () => {
+      try {
+        const response = await adminFetch('/api/admin/storefront-settings')
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to load storefront settings.')
+        if (result.initialized) {
+          if (!result.settings || typeof result.settings !== 'object') throw new Error('The storefront settings API returned invalid data.')
+          if (active) applyStorefrontSettings(result.settings)
+          return
+        }
+        const legacySettings = {
+          homeSections: adminStore.getHomeSections(),
+          homeLayout: adminStore.getHomeLayout(),
+          shippingRates: adminStore.getShippingRates(),
+          deliveryCompanies: adminStore.getDeliveryCompanies(),
+          notifications: adminStore.getNotifications(),
+          helpItems: adminStore.getHelpItems()
+        }
+        const saveResponse = await adminFetch('/api/admin/storefront-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(legacySettings)
+        })
+        const saved = await saveResponse.json()
+        if (!saveResponse.ok) throw new Error(saved.error || 'Unable to migrate saved storefront settings.')
+        if (active) applyStorefrontSettings(saved.settings)
+      } catch (settingsError) {
+        console.error('[AdminShell] Could not load or migrate storefront settings:', settingsError)
+        if (active) showToast(settingsError.message || 'Unable to load storefront settings.', 'error')
+      }
+    }
+    loadSettings()
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -169,15 +254,17 @@ export default function AdminShell({
   useEffect(() => {
     let active = true
     adminFetch('/api/admin/support-channels')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!active || !data) return
-        if (!Array.isArray(data.channels)) return
-        adminStore.saveSupportChannels(data.channels)
-        setSupportChannels(data.channels)
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to load support channels.')
+        if (!Array.isArray(result.channels)) throw new Error('The support channels API returned invalid data.')
+        if (!active) return
+        adminStore.saveSupportChannels(result.channels)
+        setSupportChannels(result.channels)
       })
       .catch((channelError) => {
-        console.warn('[AdminShell] Could not load support channels from the server:', channelError)
+        console.error('[AdminShell] Could not load support channels from the server:', channelError)
+        if (active) showToast(channelError.message || 'Unable to load support channels.', 'error')
       })
     return () => { active = false }
   }, [])
@@ -191,30 +278,33 @@ export default function AdminShell({
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Unable to save support channels.')
-      const saved = Array.isArray(result.channels) ? result.channels : updated
-      adminStore.saveSupportChannels(saved)
-      setSupportChannels(saved)
-      showToast('Support channels published to the Help page.', 'success')
+      if (!Array.isArray(result.channels)) throw new Error('The support channels API returned invalid data.')
+      adminStore.saveSupportChannels(result.channels)
+      setSupportChannels(result.channels)
     } catch (channelError) {
-      // Keep the admin's edit locally so it is not lost, and surface the failure.
       console.error('[AdminShell] Could not save support channels:', channelError)
-      adminStore.saveSupportChannels(updated)
-      setSupportChannels(updated)
-      showToast(channelError.message || 'Unable to save support channels.', 'error')
+      throw channelError
     }
   }
 
   // Sync banners from server
   useEffect(() => {
+    let active = true
     adminFetch('/api/admin/banners')
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (data && Array.isArray(data.banners)) {
-          setBanners(data.banners)
-          adminStore.saveBanners(data.banners)
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to load banners.')
+        if (!Array.isArray(result.banners)) throw new Error('The banners API returned invalid data.')
+        if (active) {
+          setBanners(result.banners)
+          adminStore.saveBanners(result.banners)
         }
       })
-      .catch(() => {})
+      .catch((bannerError) => {
+        console.error('[AdminShell] Could not load banners:', bannerError)
+        if (active) showToast(bannerError.message || 'Unable to load banners.', 'error')
+      })
+    return () => { active = false }
   }, [])
 
   // Navigate helper that updates URL cleanly
@@ -334,6 +424,7 @@ export default function AdminShell({
   const orders = data?.orders || []
   const products = data?.products || []
   const categories = data?.categories || []
+  const subCategories = data?.subCategories || []
   const customers = data?.customers || []
 
   return (
@@ -610,19 +701,9 @@ export default function AdminShell({
             <SubCategoriesPage
               subCategories={subCategories}
               categories={categories}
-              onSaveSubCategory={(saved) => {
-                const exists = subCategories.some((sc) => sc.id === saved.id)
-                let updated
-                if (exists) updated = subCategories.map((sc) => sc.id === saved.id ? saved : sc)
-                else updated = [...subCategories, saved]
-                adminStore.saveSubCategories(updated)
-                setSubCategories(updated)
-              }}
-              onDeleteSubCategory={(id) => {
-                const updated = subCategories.filter((sc) => sc.id !== id)
-                adminStore.saveSubCategories(updated)
-                setSubCategories(updated)
-              }}
+              products={products}
+              onSaveSubCategory={onSaveSubCategory}
+              onDeleteSubCategory={onDeleteSubCategory}
               showToast={showToast}
             />
           )}
@@ -641,31 +722,27 @@ export default function AdminShell({
             <BannerImagesPage
               banners={banners}
               onSaveBanner={async (saved) => {
-                const exists = banners.some((b) => b.id === saved.id)
-                let updated
-                if (exists) updated = banners.map((b) => b.id === saved.id ? saved : b)
-                else updated = [...banners, saved]
+                const response = await adminFetch('/api/admin/banners', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(saved)
+                })
+                const result = await response.json()
+                if (!response.ok) throw new Error(result.error || 'Unable to save banner.')
+                if (!result.banner) throw new Error('The banners API returned no saved banner.')
+                const updated = banners.some((banner) => banner.id === result.banner.id)
+                  ? banners.map((banner) => banner.id === result.banner.id ? result.banner : banner)
+                  : [...banners, result.banner]
                 adminStore.saveBanners(updated)
                 setBanners(updated)
-                try {
-                  await adminFetch('/api/admin/banners', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(saved)
-                  })
-                } catch (err) {
-                  console.warn('[AdminShell] Failed to save banner to API:', err)
-                }
               }}
               onDeleteBanner={async (id) => {
-                const updated = banners.filter((b) => b.id !== id)
+                const response = await adminFetch(`/api/admin/banners/${encodeURIComponent(id)}`, { method: 'DELETE' })
+                const result = await response.json()
+                if (!response.ok) throw new Error(result.error || 'Unable to delete banner.')
+                const updated = banners.filter((banner) => banner.id !== id)
                 adminStore.saveBanners(updated)
                 setBanners(updated)
-                try {
-                  await adminFetch(`/api/admin/banners/${encodeURIComponent(id)}`, { method: 'DELETE' })
-                } catch (err) {
-                  console.warn('[AdminShell] Failed to delete banner from API:', err)
-                }
               }}
               showToast={showToast}
             />
@@ -674,9 +751,8 @@ export default function AdminShell({
           {activeTab === 'Home Sections' && (
             <HomeSectionsPage
               sections={homeSections}
-              onSaveSections={(updated) => {
-                adminStore.saveHomeSections(updated)
-                setHomeSections(updated)
+              onSaveSections={async (updated) => {
+                await persistStorefrontSettings({ homeSections: updated })
               }}
               showToast={showToast}
             />
@@ -685,9 +761,8 @@ export default function AdminShell({
           {activeTab === 'Home Layout' && (
             <HomeLayoutPage
               layout={homeLayout}
-              onSaveLayout={(updated) => {
-                adminStore.saveHomeLayout(updated)
-                setHomeLayout(updated)
+              onSaveLayout={async (updated) => {
+                await persistStorefrontSettings({ homeLayout: updated })
               }}
               showToast={showToast}
             />
@@ -697,6 +772,7 @@ export default function AdminShell({
           {activeTab === 'Orders' && (
             <OrdersPage
               orders={orders}
+              deliveryCompanies={deliveryCompanies}
               onUpdateOrder={onUpdateOrder}
               onRefreshOrders={onRefreshOrders}
               selectedOrderFromNav={selectedOrderForDrawer || autoOpenOrder}
@@ -707,6 +783,7 @@ export default function AdminShell({
           {activeTab === 'အော်ဒါအသေးစိတ်' && (
             <OrderDetailsPage
               orders={orders}
+              deliveryCompanies={deliveryCompanies}
               onUpdateOrder={onUpdateOrder}
               onRefreshOrders={onRefreshOrders}
               showToast={showToast}
@@ -716,9 +793,8 @@ export default function AdminShell({
           {activeTab === 'Shipping Rates' && (
             <ShippingRatesPage
               rates={shippingRates}
-              onSaveRates={(updated) => {
-                adminStore.saveShippingRates(updated)
-                setShippingRates(updated)
+              onSaveRates={async (updated) => {
+                await persistStorefrontSettings({ shippingRates: updated })
               }}
               showToast={showToast}
             />
@@ -727,9 +803,8 @@ export default function AdminShell({
           {activeTab === 'Delivery Companies' && (
             <DeliveryCompaniesPage
               companies={deliveryCompanies}
-              onSaveCompanies={(updated) => {
-                adminStore.saveDeliveryCompanies(updated)
-                setDeliveryCompanies(updated)
+              onSaveCompanies={async (updated) => {
+                await persistStorefrontSettings({ deliveryCompanies: updated })
               }}
               showToast={showToast}
             />
@@ -751,6 +826,7 @@ export default function AdminShell({
             <CustomersPage
               customers={customers}
               orders={orders}
+              onUpdateCustomerStatus={onUpdateCustomerStatus}
               showToast={showToast}
             />
           )}
@@ -758,9 +834,8 @@ export default function AdminShell({
           {activeTab === 'Notifications' && (
             <NotificationsPage
               notifications={notifications}
-              onSaveNotifications={(updated) => {
-                adminStore.saveNotifications(updated)
-                setNotifications(updated)
+              onSaveNotifications={async (updated) => {
+                await persistStorefrontSettings({ notifications: updated })
               }}
               showToast={showToast}
             />
@@ -777,9 +852,8 @@ export default function AdminShell({
           {activeTab === 'Help Items' && (
             <HelpItemsPage
               helpItems={helpItems}
-              onSaveHelpItems={(updated) => {
-                adminStore.saveHelpItems(updated)
-                setHelpItems(updated)
+              onSaveHelpItems={async (updated) => {
+                await persistStorefrontSettings({ helpItems: updated })
               }}
               showToast={showToast}
             />

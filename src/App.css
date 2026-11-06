@@ -1238,6 +1238,36 @@ textarea {
   padding: 1rem;
   border: 1px dashed var(--line);
   border-radius: 12px;
+}
+
+.support-help-items {
+  display: grid;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+.support-help-items h4 {
+  margin: 0;
+  color: var(--brand-strong);
+}
+
+.support-help-items details {
+  padding: .65rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.support-help-items summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.support-help-items p {
+  margin: .5rem 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
   text-align: center;
 }
 

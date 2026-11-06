@@ -76,6 +76,7 @@ const formatRangeLabel = (startDate, endDate) => {
 // အော်ဒါအသေးစိတ် — one flat row per ordered line item across every order.
 export default function OrderDetailsPage({
   orders = [],
+  deliveryCompanies = [],
   onUpdateOrder,
   onRefreshOrders,
   showToast,
@@ -452,6 +453,7 @@ export default function OrderDetailsPage({
         <OrderDetailDrawer
           order={selectedOrder}
           orders={orders}
+          deliveryCompanies={deliveryCompanies}
           readOnly
           onClose={() => setSelectedOrder(null)}
           onUpdateShipping={async (changes) => {

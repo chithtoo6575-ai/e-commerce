@@ -17,12 +17,16 @@ export default function NotificationsPage({
   const [editingNotification, setEditingNotification] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
 
-  const handleSendNow = (notif) => {
+  const handleSendNow = async (notif) => {
     const updated = notifications.map((n) =>
       n.id === notif.id ? { ...n, status: 'Sent', date: new Date().toISOString() } : n
     )
-    onSaveNotifications?.(updated)
-    showToast?.(`Broadcast notification "${notif.title}" sent to ${notif.audience}!`, 'success')
+    try {
+      await onSaveNotifications?.(updated)
+      showToast?.(`Broadcast notification "${notif.title}" sent to ${notif.audience}!`, 'success')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to send notification.', 'error')
+    }
   }
 
   return (
@@ -131,7 +135,7 @@ export default function NotificationsPage({
         <NotificationModal
           notification={editingNotification}
           onClose={() => setEditingNotification(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = notifications.some((n) => n.id === saved.id)
             let updated
             if (exists) {
@@ -139,9 +143,13 @@ export default function NotificationsPage({
             } else {
               updated = [saved, ...notifications]
             }
-            onSaveNotifications?.(updated)
-            showToast?.(exists ? 'Notification updated' : 'Notification created', 'success')
-            setEditingNotification(null)
+            try {
+              await onSaveNotifications?.(updated)
+              showToast?.(exists ? 'Notification updated' : 'Notification created', 'success')
+              setEditingNotification(null)
+            } catch (saveError) {
+              showToast?.(saveError.message || 'Unable to save notification.', 'error')
+            }
           }}
         />
       )}
@@ -153,11 +161,15 @@ export default function NotificationsPage({
         message={adminT("Are you sure you want to delete this notification record?")}
         confirmText={adminT("Delete")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = notifications.filter((n) => n.id !== deleteConfirmId)
-          onSaveNotifications?.(updated)
-          showToast?.('Notification deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveNotifications?.(updated)
+            showToast?.('Notification deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete notification.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />

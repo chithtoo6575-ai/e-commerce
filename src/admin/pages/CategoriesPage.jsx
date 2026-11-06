@@ -8,6 +8,8 @@ import {
   IconTrash,
   IconX
 } from '../AdminIcons'
+import { adminFetch } from '../../adminApi'
+import { apiErrorMessage, readJsonResponse } from '../../lib/apiResponse'
 
 export default function CategoriesPage({
   categories = [],
@@ -40,8 +42,12 @@ export default function CategoriesPage({
 
   const handleToggleEnable = async (cat) => {
     const updated = { ...cat, enabled: cat.enabled === false ? true : false }
-    await onSaveCategory?.(updated)
-    showToast?.(`Category "${cat.name}" is now ${updated.enabled ? 'Enabled' : 'Disabled'}`, 'info')
+    try {
+      await onSaveCategory?.(updated)
+      showToast?.(`Category "${cat.name}" is now ${updated.enabled ? 'Enabled' : 'Disabled'}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update category status.', 'error')
+    }
   }
 
   return (
@@ -117,13 +123,15 @@ export default function CategoriesPage({
                   return (
                     <tr key={c.id || c.name} className="table-row-hover">
                       <td>
-                        <div className="category-icon-box">
-                          {c.image ? (
-                            <img src={c.image} alt={c.name} className="cat-table-thumb" />
-                          ) : (
+                        {c.image ? (
+                          <div className="admin-category-table-thumb">
+                            <img src={c.image} alt={c.name} />
+                          </div>
+                        ) : (
+                          <div className="category-icon-box">
                             <span className="cat-icon-symbol">{c.icon || '▥'}</span>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <strong className="text-primary font-medium">{c.name}</strong>
@@ -181,7 +189,7 @@ export default function CategoriesPage({
           onClose={() => setEditingCategory(null)}
           onSave={async (saved) => {
             await onSaveCategory?.(saved)
-            showToast?.(saved.id ? 'Category updated' : 'Category created', 'success')
+            showToast?.(editingCategory.id ? 'Category updated' : 'Category created', 'success')
             setEditingCategory(null)
           }}
         />
@@ -195,9 +203,13 @@ export default function CategoriesPage({
         confirmText={adminT("Delete")}
         danger={true}
         onConfirm={async () => {
-          await onDeleteCategory?.(deleteConfirmId)
-          showToast?.('Category deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onDeleteCategory?.(deleteConfirmId)
+            showToast?.('Category deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (deleteError) {
+            showToast?.(deleteError.message || 'Unable to delete category.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />
@@ -217,6 +229,34 @@ function CategoryModal({ category, onClose, onSave }) {
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [pendingImageFile, setPendingImageFile] = useState(null)
+
+  const handleImageFileChange = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+    if (!supportedType) {
+      setError('Category image must be a JPG, PNG, or WebP file.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Category image must be 5 MB or smaller.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setError('Unable to preview the selected category image.')
+        return
+      }
+      setPendingImageFile(file)
+      setFormData((current) => ({ ...current, image: reader.result }))
+      setError('')
+    }
+    reader.onerror = () => setError('Failed to read the selected category image.')
+    reader.readAsDataURL(file)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -225,11 +265,27 @@ function CategoryModal({ category, onClose, onSave }) {
       return
     }
     setSaving(true)
-    await onSave({
-      ...formData,
-      id: formData.id || formData.name.trim()
-    })
-    setSaving(false)
+    setError('')
+    try {
+      let image = formData.image
+      if (pendingImageFile) {
+        const uploadResponse = await adminFetch('/api/admin/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: formData.image, filename: pendingImageFile.name })
+        })
+        const uploadResult = await readJsonResponse(uploadResponse, 'Unable to upload category image.')
+        if (!uploadResponse.ok || !uploadResult.url) {
+          throw new Error(apiErrorMessage(uploadResult, 'Unable to upload category image.'))
+        }
+        image = uploadResult.url
+      }
+      await onSave({ ...formData, image, id: formData.id || formData.name.trim() })
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save category.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -290,15 +346,25 @@ function CategoryModal({ category, onClose, onSave }) {
           </div>
 
           <div className="form-group">
-            <label>{adminT("Category Image URL (Optional)")}</label>
+            <label>{adminT("Category Image (Optional)")}</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+              onChange={handleImageFileChange}
+              disabled={saving}
+            />
+            <span className="text-muted text-xs">{adminT("Upload a JPG, PNG, or WebP image up to 5 MB, or enter an image URL.")}</span>
             <input
               type="text"
               placeholder={adminT("https://...")}
-              value={formData.image}
-              onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+              value={pendingImageFile ? '' : formData.image}
+              onChange={(e) => {
+                setPendingImageFile(null)
+                setFormData({ ...formData, image: e.target.value })
+              }}
             />
             {formData.image && (
-              <div className="image-preview-box">
+              <div className="admin-category-image-preview">
                 <img src={formData.image} alt={adminT("Preview")} />
               </div>
             )}

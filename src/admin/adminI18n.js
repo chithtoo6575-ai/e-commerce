@@ -736,6 +736,8 @@ const MYANMAR = {
   'Weight / Extra Fee': 'အလေးချိန် / အပိုကြေး',
   'Sale Price (Optional Ks)': 'လျှော့ဈေး (ရွေးချယ်နိုင်သည်၊ ကျပ်)',
   'Cost Price (Ks)': 'အရင်းဈေး (ကျပ်)',
+  'Weight (kg)': 'အလေးချိန် (ကီလိုဂရမ်)',
+  'Product shipping weight must be zero or more': 'ပို့ဆောင်ရေးအလေးချိန်သည် သုည သို့မဟုတ် ထို့ထက်ပိုရမည်',
   'Link / Target': 'လင့်ခ် / သွားရောက်ရန်',
   'Processing / Packing': 'ဆောင်ရွက်နေသည် / ထုပ်ပိုးနေသည်',
   'Stock In (Inbound/Restock)': 'စတော့အဝင် (ပစ္စည်းလက်ခံ / ပြန်ဖြည့်)',

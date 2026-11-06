@@ -6,9 +6,9 @@ import { getProductStock, getProductVariants, hasVariantStock, variantStockKey }
 import { readJsonResponse, apiErrorMessage } from './lib/apiResponse'
 import DesktopApp from './DesktopApp'
 import MobileApp from './MobileApp'
+import './storefront.css'
 import { adminStore } from './admin/adminStore'
 import { fetchSupportChannels, mergeSupportChannels } from './lib/supportChannels'
-import { shopData, supabase, supabaseConfigured } from './lib/supabase'
 
 const GUEST_CART_KEY = 'atelier_guest_cart'
 const GUEST_WISHLIST_KEY = 'atelier_guest_wishlist'
@@ -141,29 +141,77 @@ function clearOrderRequestKey() {
   }
 }
 
+function mapCustomerOrder(order) {
+  const rawCustomer = order.customer && typeof order.customer === 'object' ? order.customer : {}
+  const rawShippingAddress = order.shippingAddress ?? order.shipping_address
+  const shippingAddress = rawCustomer.address || rawShippingAddress?.addressLine || rawShippingAddress?.address_line ||
+    rawShippingAddress?.address || (typeof rawShippingAddress === 'string' ? rawShippingAddress : '')
+  const items = Array.isArray(order.items) ? order.items : Array.isArray(order.order_items) ? order.order_items : []
+  const createdAt = order.createdAt || order.created_at || ''
+  const status = order.status ? `${order.status[0].toUpperCase()}${order.status.slice(1)}` : 'Pending'
+  return {
+    ...order,
+    orderNumber: order.orderNumber || order.order_number || order.id,
+    status,
+    statusHistory: Array.isArray(order.statusHistory) ? order.statusHistory : [{ status, at: createdAt }],
+    createdAt,
+    total: Number(order.total ?? order.grandTotal ?? 0),
+    subtotal: Number(order.subtotal ?? 0),
+    deliveryFee: Number(order.deliveryFee ?? order.delivery_fee ?? 0),
+    shippingFee: Number(order.shippingFee ?? order.shipping_fee ?? order.deliveryFee ?? order.delivery_fee ?? 0),
+    discount: Number(order.discount ?? 0),
+    paymentStatus: order.paymentStatus || order.payment_status || 'Pending',
+    shippingStatus: order.shippingStatus || order.shipping_status || '',
+    trackingNumber: order.trackingNumber || order.tracking_number || '',
+    deliveryMethod: order.deliveryMethod || order.delivery_method || '',
+    paymentMethod: order.paymentMethod || order.payment_method || '',
+    customer: {
+      ...rawCustomer,
+      name: rawCustomer.name || order.recipientName || order.recipient_name || '',
+      phone: rawCustomer.phone || order.recipientPhone || order.recipient_phone || '',
+      address: shippingAddress
+    },
+    items: items.map((item) => ({
+      ...item,
+      id: item.id || item.productId || item.product_id,
+      productId: item.productId || item.product_id || item.id,
+      name: item.name || item.productName || item.product_name || 'Product',
+      quantity: Number(item.quantity || 0),
+      price: Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0),
+      lineTotal: Number(item.lineTotal ?? item.line_total ?? (Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0) * Number(item.quantity || 0)))
+    }))
+  }
+}
+
 const MAIN_TABS = ['home', 'categories', 'search', 'wishlist', 'account', 'cart']
 
 const CATEGORY_TREE = {
-  Men: ['T-Shirts', 'Shirts', 'Pants', 'Jackets', 'Sweaters', 'Shorts', 'Activewear', 'Shoes'],
-  Women: ['Dresses', 'Tops', 'Pants', 'Jackets', 'Skirts', 'Activewear', 'Shoes'],
-  Kids: ['Boys', 'Girls', 'Baby'],
-  Shoes: ['Running', 'Casual', 'Formal'],
-  Accessories: ['Bags', 'Belts', 'Hats', 'Watches'],
-  Sale: ['Flash Sale', 'Clearance']
+  'Fans & Cooling': ['Electric Fans', 'Mini Fans'],
+  'Kitchen Appliances': ['Toasters'],
+  'Cooking Appliances': ['Electric Hot Pots'],
+  'Rice Cookers': ['Rice Cookers'],
+  'Blenders & Mixers': ['Blenders', 'Mixers'],
+  'Cleaning Appliances': ['Vacuum Cleaners'],
+  'Small Appliances': ['Kettles', 'Irons'],
+  'Home Electronics': ['Microwave Ovens']
+}
+
+function buildCategoryTree(categories, subCategories) {
+  return Object.fromEntries(categories.map((category) => [
+    category.name,
+    subCategories
+      .filter((subCategory) =>
+        subCategory.parentCategoryId === category.id ||
+        subCategory.parentCategoryId === category.name
+      )
+      .sort((first, second) => Number(first.sortOrder || 0) - Number(second.sortOrder || 0))
+      .map((subCategory) => subCategory.name)
+  ]))
 }
 
 const DELIVERY_METHODS = [
   { id: 'standard', label: 'Standard Delivery' },
   { id: 'cargate', label: 'Car Gate Pickup' }
-]
-
-const seedCatalog = [
-  { id: 'm-tee-1', name: 'Classic Cotton Tee', category: 'Men', subcategory: 'T-Shirts', brand: 'HTOO', style: 'Casual', material: 'Cotton', color: 'Black', size: ['S', 'M', 'L'], rating: 4.7, price: 24900, oldPrice: 29900, stock: 12, image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'], description: 'Premium heavyweight cotton tee with tailored fit and breathable weave.' },
-  { id: 'w-dress-1', name: 'Floral Midi Dress', category: 'Women', subcategory: 'Dresses', brand: 'HTOO', style: 'Elegant', material: 'Rayon', color: 'Blue', size: ['M', 'L'], rating: 4.8, price: 48900, oldPrice: 56900, stock: 8, image: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=900&q=80'], description: 'Flowing rayon silhouette with custom botanical floral print.' },
-  { id: 'k-boys-1', name: 'Boys Active Set', category: 'Kids', subcategory: 'Boys', brand: 'HTOO Kids', style: 'Activewear', material: 'Polyester', color: 'Green', size: ['XS', 'S'], rating: 4.6, price: 31900, oldPrice: null, stock: 11, image: 'https://images.unsplash.com/photo-1519238359922-989348752efb?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1519238359922-989348752efb?auto=format&fit=crop&w=900&q=80'], description: 'Breathable sports wear set for active boys with stretch fabric.' },
-  { id: 'shoe-1', name: 'City Runner Shoes', category: 'Shoes', subcategory: 'Running', brand: 'HTOO Sport', style: 'Sport', material: 'Mesh', color: 'White', size: ['40', '41', '42', '43'], rating: 4.5, price: 68900, oldPrice: 75900, stock: 14, image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80'], description: 'Lightweight aerodynamic running sneakers with responsive foam cushion.' },
-  { id: 'acc-1', name: 'Canvas Daypack', category: 'Accessories', subcategory: 'Bags', brand: 'HTOO Essentials', style: 'Minimal', material: 'Canvas', color: 'Brown', size: ['One Size'], rating: 4.4, price: 39900, oldPrice: 45900, stock: 9, image: 'https://images.unsplash.com/photo-1491637639811-60e2756cc1c7?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1491637639811-60e2756cc1c7?auto=format&fit=crop&w=900&q=80'], description: 'Vintage waterproof waxed canvas backpack with laptop sleeve.' },
-  { id: 'sale-1', name: 'Denim Jacket Sale', category: 'Sale', subcategory: 'Clearance', brand: 'HTOO', style: 'Street', material: 'Denim', color: 'Navy', size: ['M', 'L'], rating: 4.2, price: 55900, oldPrice: 79900, stock: 5, image: 'https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504?auto=format&fit=crop&w=900&q=80', images: ['https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504?auto=format&fit=crop&w=900&q=80'], description: 'Classic rugged washed denim jacket with brass buttons.' }
 ]
 
 const initialFilters = {
@@ -174,6 +222,7 @@ const initialFilters = {
   category: '',
   rating: '',
   availability: '',
+  discount: '',
   material: '',
   style: ''
 }
@@ -215,16 +264,19 @@ function mapApiProduct(raw) {
     id: String(raw.id),
     name: raw.nameEn || raw.name || 'Product',
     nameMy: raw.nameMy || '',
-    category: raw.storefrontCategory || (raw.category === 'Clothing' ? 'Men' : raw.category === 'Grocery' ? 'Accessories' : 'Shoes'),
-    subcategory: raw.subCategory || raw.categoryName || raw.category,
+    category: raw.categoryName || raw.categories?.name || raw.category || '',
+    subcategory: raw.subCategory || raw.subcategory || '',
     brand: raw.brand || 'HTOO',
     style: raw.style || 'Standard',
     material: raw.material || '',
     color: raw.color || '',
     featured: Boolean(raw.featured),
+    isBestSeller: Boolean(raw.isBestSeller),
+    salesCount: Number(raw.salesCount) || 0,
     size: sizes,
     rating: Number.isFinite(Number(raw.rating)) ? Number(raw.rating) : 0,
     reviewsCount: Number(raw.reviewsCount) || 0,
+    demoData: Boolean(raw.demoData),
     price: raw.discountPrice ?? raw.price ?? 0,
     oldPrice: raw.discountPrice != null && raw.discountPrice < raw.price ? raw.price : null,
     stock: Number.isInteger(raw.stock) ? raw.stock : 0,
@@ -269,6 +321,7 @@ export default function App() {
   const [authFlow, setAuthFlow] = useState('login')
   const [authOtpPurpose, setAuthOtpPurpose] = useState('')
   const [authChallengeId, setAuthChallengeId] = useState('')
+  const [authResetToken, setAuthResetToken] = useState('')
   const [authPhone, setAuthPhone] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [authNotice, setAuthNotice] = useState('')
@@ -281,7 +334,7 @@ export default function App() {
       setLanguage(user.languagePreference)
     }
   }, [user?.id, user?.languagePreference, setLanguage])
-  const [products, setProducts] = useState(seedCatalog)
+  const [products, setProducts] = useState([])
   const [catalogStatus, setCatalogStatus] = useState('loading')
   const [cart, setCart] = useState([])
   const [cartLoadedFor, setCartLoadedFor] = useState('')
@@ -290,14 +343,19 @@ export default function App() {
   const cartSyncRef = useRef(null)
   const [wishlist, setWishlist] = useState([])
   const [activeTab, setActiveTab] = useState('home')
+  const [storefrontCategories, setStorefrontCategories] = useState([])
+  const [categoryTree, setCategoryTree] = useState(CATEGORY_TREE)
   const [storefrontBanners, setStorefrontBanners] = useState(() => adminStore.getBanners())
   const [storefrontSections, setStorefrontSections] = useState(() => adminStore.getHomeSections())
   const [storefrontLayout, setStorefrontLayout] = useState(() => adminStore.getHomeLayout())
+  const [storefrontShippingRates, setStorefrontShippingRates] = useState([])
+  const [storefrontDeliveryCompanies, setStorefrontDeliveryCompanies] = useState([])
+  const [storefrontHelpItems, setStorefrontHelpItems] = useState([])
   // Active channels published by the admin; re-fetched when the Help page opens.
-  const [supportChannels, setSupportChannels] = useState(() => adminStore.getSupportChannels())
+  const [supportChannels, setSupportChannels] = useState([])
   const [supportChannelsLoading, setSupportChannelsLoading] = useState(false)
   const [supportChannelsError, setSupportChannelsError] = useState('')
-  const [storefrontNotifications, setStorefrontNotifications] = useState(() => adminStore.getNotifications())
+  const [storefrontNotifications, setStorefrontNotifications] = useState([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [recentSearches, setRecentSearches] = useState([])
@@ -305,14 +363,8 @@ export default function App() {
   const [filters, setFilters] = useState(initialFilters)
   const [coupon, setCoupon] = useState('')
   const [checkoutStep, setCheckoutStep] = useState('review')
-  const [addressBook, setAddressBook] = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
-      return Array.isArray(stored.guest) ? stored.guest : []
-    } catch {
-      return []
-    }
-  })
+  const [addressBook, setAddressBook] = useState([])
+
   const [paymentMethods, setPaymentMethods] = useState([])
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
   const [promotions, setPromotions] = useState([])
@@ -332,7 +384,6 @@ export default function App() {
     shippingAddress: '',
     deliveryMethod: DELIVERY_METHODS[0].id,
     paymentAccountId: '',
-    saveAddress: true
   })
 
   useEffect(() => {
@@ -340,12 +391,15 @@ export default function App() {
       setStorefrontBanners(adminStore.getBanners())
       setStorefrontSections(adminStore.getHomeSections())
       setStorefrontLayout(adminStore.getHomeLayout())
+      setStorefrontShippingRates(adminStore.getShippingRates())
+      setStorefrontDeliveryCompanies(adminStore.getDeliveryCompanies())
+      setStorefrontHelpItems(adminStore.getHelpItems())
       setSupportChannels((current) => mergeSupportChannels(adminStore.getSupportChannels(), current))
       setStorefrontNotifications(adminStore.getNotifications())
     }
     const handleAdminStoreUpdate = (event) => {
       const key = event.detail?.key
-      if (key === 'banners' || key === 'home_sections' || key === 'home_layout' || key === 'support_channels' || key === 'notifications') refreshStorefrontSettings()
+      if (key === 'banners' || key === 'home_sections' || key === 'home_layout' || key === 'support_channels' || key === 'notifications' || key === 'shipping_rates' || key === 'delivery_companies' || key === 'help_items') refreshStorefrontSettings()
     }
     const handleStorage = (event) => {
       if (event.key?.startsWith('htoo_admin_')) refreshStorefrontSettings()
@@ -365,7 +419,7 @@ export default function App() {
     setSupportChannelsError('')
     try {
       const channels = await fetchSupportChannels()
-      setSupportChannels(mergeSupportChannels(channels, adminStore.getSupportChannels()))
+      setSupportChannels(mergeSupportChannels(channels))
     } catch (channelError) {
       console.warn('[support] Could not load support channels from the server:', channelError)
       setSupportChannelsError('Unable to load the latest support channels. Please try again.')
@@ -379,24 +433,57 @@ export default function App() {
   }, [loadSupportChannels])
 
   useEffect(() => {
-    try {
-      const books = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
-      const saved = books[user?.id || 'guest']
-      if (Array.isArray(saved)) setAddressBook(saved)
-    } catch (storageError) {
-      console.warn('[account] Could not restore saved addresses.', storageError)
+    let active = true
+    setAddressBook([])
+    if (user?.id) {
+      async function loadAddresses() {
+        try {
+          const response = await fetch('/api/customer/addresses')
+          const result = await readJsonResponse(response, 'Unable to load your saved addresses.')
+          if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to load your saved addresses.'))
+          let addresses = Array.isArray(result.addresses) ? result.addresses : []
+          let legacyBooks = {}
+          try {
+            legacyBooks = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
+          } catch (storageError) {
+            console.warn('[account] Could not read legacy saved addresses for migration.', storageError)
+          }
+          const legacyAddresses = Array.isArray(legacyBooks[user.id]) ? legacyBooks[user.id] : []
+          if (!addresses.length && legacyAddresses.length) {
+            const migrationResponse = await fetch('/api/customer/addresses/import', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ addresses: legacyAddresses })
+            })
+            const migration = await readJsonResponse(migrationResponse, 'Unable to migrate your saved addresses.')
+            if (!migrationResponse.ok) throw new Error(apiErrorMessage(migration, 'Unable to migrate your saved addresses.'))
+            addresses = Array.isArray(migration.addresses) ? migration.addresses : []
+          }
+          if (legacyBooks[user.id]) {
+            delete legacyBooks[user.id]
+            try {
+              localStorage.setItem('hto_customer_addresses', JSON.stringify(legacyBooks))
+            } catch (storageError) {
+              console.warn('[account] Could not clear migrated local address data.', storageError)
+            }
+          }
+          if (active) setAddressBook(addresses)
+        } catch (loadError) {
+          if (active) setError(loadError.message || 'Unable to load your saved addresses.')
+        }
+      }
+      void loadAddresses()
+    } else {
+      try {
+        const books = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
+        setAddressBook(Array.isArray(books.guest) ? books.guest : [])
+      } catch (storageError) {
+        console.warn('[account] Could not restore guest saved addresses.', storageError)
+        setAddressBook([])
+      }
     }
+    return () => { active = false }
   }, [user?.id])
-
-  useEffect(() => {
-    try {
-      const key = user?.id || 'guest'
-      const books = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
-      localStorage.setItem('hto_customer_addresses', JSON.stringify({ ...books, [key]: addressBook }))
-    } catch (storageError) {
-      console.warn('[account] Could not persist saved addresses.', storageError)
-    }
-  }, [addressBook, user?.id])
 
   useEffect(() => {
     try {
@@ -419,64 +506,97 @@ export default function App() {
   }, [checkoutForm, checkoutStep])
 
   useEffect(() => {
-    if (!supabaseConfigured) {
-      console.warn('[catalog] Supabase is not configured; loading products from the legacy API.')
-    }
     let active = true
     const restoreCustomer = async () => {
-      if (!supabaseConfigured) return
-      const profile = await shopData.getProfile()
-      if (active && profile) {
-        setUser({ id: profile.id, name: profile.full_name, phone: profile.phone, email: profile.email, languagePreference: profile.language_preference })
+      const response = await fetch('/api/customer/session')
+      const result = await readJsonResponse(response, 'Unable to restore the customer session.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to restore the customer session.'))
+      if (active && result.customer) {
+        setUser(result.customer)
         setRoute({ page: 'main' })
       }
     }
     restoreCustomer().catch((restoreError) => console.error('[auth] Session restoration failed.', restoreError))
-    const authListener = supabase?.auth.onAuthStateChange((_event, session) => {
-      if (!session) setUser(null)
-    })
     const telegramWebApp = window.Telegram?.WebApp
-    const telegramInitData = telegramWebApp?.initData || ''
     telegramWebApp?.ready()
     telegramWebApp?.expand()
 
-    async function linkTelegramAccount() {
-      const response = await fetch('/api/customer/telegram/link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData: telegramInitData })
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Unable to link this Telegram account.')
-    }
-
     const loadProducts = async () => {
-      if (supabaseConfigured) {
-        try {
-          const data = await shopData.getProducts()
-          if (active && Array.isArray(data) && data.length) {
-            setProducts(data.map(mapApiProduct))
-            setCatalogStatus('ready')
-            return
-          }
-        } catch (catalogError) {
-          console.warn('[catalog] Supabase product load failed, falling back to API.', catalogError)
-        }
-      }
       const response = await fetch('/api/products')
       const result = await readJsonResponse(response)
-      if (!response.ok) throw new Error(result.error || 'Unable to load products.')
+      if (!response.ok) throw new Error(result.error || 'Unable to load products from the shop API.')
+      if (!Array.isArray(result.products)) throw new Error('The shop API returned an invalid product list.')
       if (active) {
-        setProducts(Array.isArray(result.products) ? result.products.map(mapApiProduct) : [])
+        setProducts(result.products.map(mapApiProduct))
         setCatalogStatus('ready')
       }
     }
-    loadProducts().catch((catalogError) => {
-      console.error('[catalog] Unable to load products.', catalogError)
-      if (active) setCatalogStatus('error')
-    })
-    shopData.getSettings().then((data) => { if (active && data.car_gate_pickup_fee != null) setSettings({ carGatePickupFee: Number(data.car_gate_pickup_fee) }) }).catch((loadError) => console.warn('[settings] Unable to load store settings.', loadError))
-    shopData.getPromotions().then((data) => { if (active) setPromotions(data || []) }).catch((loadError) => console.warn('[promotions] Unable to load promotions.', loadError))
+    const loadCategories = async () => {
+      try {
+        const response = await fetch('/api/categories')
+        const result = await readJsonResponse(response)
+        if (!response.ok) throw new Error(result.error || 'Unable to load categories.')
+        if (!Array.isArray(result.categories) || !Array.isArray(result.subCategories)) {
+          throw new Error('The categories API returned invalid data.')
+        }
+        if (active) {
+          setStorefrontCategories(result.categories)
+          setCategoryTree(buildCategoryTree(result.categories, result.subCategories))
+          setSelectedCategory((current) =>
+            current && result.categories.some((category) => category.name === current) ? current : ''
+          )
+        }
+      } catch (categoryError) {
+        console.warn('[categories] Unable to load categories from the shop API.', categoryError)
+      }
+    }
+    const loadStorefrontSettings = async () => {
+      try {
+        const response = await fetch('/api/storefront-settings')
+        const result = await readJsonResponse(response)
+        if (!response.ok) throw new Error(result.error || 'Unable to load storefront settings.')
+        if (!result.initialized) return
+        for (const key of ['homeSections', 'homeLayout', 'shippingRates', 'deliveryCompanies', 'notifications', 'helpItems']) {
+          if (!Array.isArray(result[key])) throw new Error(`The storefront settings API returned invalid ${key}.`)
+        }
+        if (!active) return
+        setStorefrontSections(result.homeSections)
+        setStorefrontLayout(result.homeLayout)
+        setStorefrontShippingRates(result.shippingRates)
+        setStorefrontDeliveryCompanies(result.deliveryCompanies)
+        setStorefrontNotifications(result.notifications)
+        setStorefrontHelpItems(result.helpItems)
+      } catch (settingsError) {
+        console.error('[storefront] Unable to load published settings.', settingsError)
+      }
+    }
+    const refreshCatalog = () => {
+      loadProducts().catch((catalogError) => {
+        console.error('[catalog] Unable to load products.', catalogError)
+        if (active) {
+          setProducts([])
+          setCatalogStatus('error')
+        }
+      })
+      loadCategories()
+      loadStorefrontSettings()
+    }
+    refreshCatalog()
+    const catalogRefreshInterval = window.setInterval(refreshCatalog, 60_000)
+    window.addEventListener('focus', refreshCatalog)
+    fetch('/api/settings').then(async (response) => {
+      const result = await readJsonResponse(response)
+      if (!response.ok) throw new Error(result.error || 'Unable to load store settings.')
+      const fee = Number(result.settings?.carGatePickupFee)
+      if (!Number.isFinite(fee) || fee < 0) throw new Error('The store settings API returned an invalid pickup fee.')
+      if (active) setSettings({ carGatePickupFee: fee })
+    }).catch((loadError) => console.error('[settings] Unable to load store settings.', loadError))
+    fetch('/api/promotions').then(async (response) => {
+      const result = await readJsonResponse(response)
+      if (!response.ok) throw new Error(result.error || 'Unable to load promotions.')
+      if (!Array.isArray(result.promotions)) throw new Error('The promotions API returned invalid data.')
+      if (active) setPromotions(result.promotions)
+    }).catch((loadError) => console.error('[promotions] Unable to load promotions.', loadError))
     const loadBanners = async () => {
       try {
         const response = await fetch('/api/banners')
@@ -489,18 +609,13 @@ export default function App() {
         console.warn('[banners] Storefront API load failed.', apiError)
       }
 
-      if (!supabaseConfigured) return
-      try {
-        const data = await shopData.getBanners()
-        if (active && Array.isArray(data)) setStorefrontBanners(data.map(mapStorefrontBanner))
-      } catch (supabaseError) {
-        console.warn('[banners] Supabase load failed.', supabaseError)
-      }
+      if (active) setStorefrontBanners([])
     }
     loadBanners()
     return () => {
       active = false
-      authListener?.data?.subscription?.unsubscribe()
+      window.clearInterval(catalogRefreshInterval)
+      window.removeEventListener('focus', refreshCatalog)
     }
   }, [])
 
@@ -680,6 +795,8 @@ export default function App() {
 
   useEffect(() => {
     if (!user?.id && !guestMode) return
+    setOrders([])
+    setOrdersLoadedFor('')
     let active = true
     const customerKey = user?.id || 'guest'
     async function loadOrders() {
@@ -690,7 +807,7 @@ export default function App() {
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Unable to refresh your orders.')
         if (active) {
-          setOrders(Array.isArray(result.orders) ? result.orders : [])
+          setOrders(Array.isArray(result.orders) ? result.orders.map(mapCustomerOrder) : [])
           setOrdersLoadedFor(customerKey)
         }
       } catch (loadError) {
@@ -707,6 +824,12 @@ export default function App() {
       window.clearInterval(interval)
     }
   }, [user?.id, guestMode])
+
+  useEffect(() => {
+    if (!selectedOrder?.id) return
+    const latestOrder = orders.find((order) => order.id === selectedOrder.id)
+    if (latestOrder && latestOrder.updatedAt !== selectedOrder.updatedAt) setSelectedOrder(latestOrder)
+  }, [orders, selectedOrder?.id, selectedOrder?.updatedAt])
 
   useEffect(() => {
     if (!user?.id || !deepLinkOrderId || ordersLoadedFor !== user.id) return
@@ -729,12 +852,13 @@ export default function App() {
   const filteredProducts = useMemo(() => {
     let list = [...products]
 
-    if (activeTab === 'categories' && selectedCategory) {
-      list = list.filter((product) => product.category === selectedCategory)
+    if (activeTab === 'categories') {
+      const category = selectedCategory || Object.keys(categoryTree)[0]
+      if (category) list = list.filter((product) => product.category === category)
     }
     if (searchQuery.trim()) {
       const term = searchQuery.toLowerCase()
-      list = list.filter((product) => `${product.name} ${product.brand}`.toLowerCase().includes(term))
+      list = list.filter((product) => `${product.name} ${product.brand} ${product.category} ${product.subcategory}`.toLowerCase().includes(term))
     }
     if (filters.size) list = list.filter((p) => p.size.includes(filters.size))
     if (filters.color) list = list.filter((p) => p.color === filters.color)
@@ -742,6 +866,8 @@ export default function App() {
     if (filters.category) list = list.filter((p) => p.category === filters.category)
     if (filters.rating) list = list.filter((p) => p.rating >= Number(filters.rating))
     if (filters.availability === 'in-stock') list = list.filter((p) => p.stock > 0)
+    if (filters.availability === 'out-of-stock') list = list.filter((p) => p.stock <= 0)
+    if (filters.discount === 'discounted') list = list.filter((p) => Number(p.oldPrice) > Number(p.price))
     if (filters.material) list = list.filter((p) => p.material === filters.material)
     if (filters.style) list = list.filter((p) => p.style === filters.style)
     if (filters.price) {
@@ -765,7 +891,36 @@ export default function App() {
     const price = Number(product?.discountPrice ?? product?.price ?? item.price)
     return sum + Math.max(0, Number.isFinite(price) ? price : 0) * quantity
   }, 0), [cart, products])
-  const deliveryFee = checkoutForm.deliveryMethod === 'cargate' ? Math.max(0, Number(settings.carGatePickupFee) || 0) : 0
+  const cartShippingWeightKg = useMemo(() => cart.reduce((totalWeight, item) => {
+    const product = products.find((candidate) => String(candidate.id) === String(item.id))
+    const weightKg = Math.max(0, Number(product?.weightKg) || 0)
+    const quantity = Number.isSafeInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0
+    return totalWeight + weightKg * quantity
+  }, 0), [cart, products])
+  const deliveryMethods = useMemo(() => [
+    ...(storefrontShippingRates.length ? storefrontShippingRates.map((rate) => ({
+      id: rate.id,
+      label: `${rate.region} · ${rate.deliveryType}`,
+      rate
+    })) : [{ id: 'standard', label: 'Standard Delivery' }]),
+    { id: 'cargate', label: 'Car Gate Pickup' }
+  ], [storefrontShippingRates])
+  const selectedShippingRate = storefrontShippingRates.find((rate) => rate.id === checkoutForm.deliveryMethod)
+  const deliveryFee = selectedShippingRate
+    ? Number(selectedShippingRate.freeThreshold) > 0 && cartSubtotal >= Number(selectedShippingRate.freeThreshold)
+      ? 0
+      : Math.max(0, Number(selectedShippingRate.baseFee) || 0) +
+        Math.ceil(Math.max(0, Number(selectedShippingRate.additionalFee) || 0) * cartShippingWeightKg)
+    : checkoutForm.deliveryMethod === 'cargate'
+      ? Math.max(0, Number(settings.carGatePickupFee) || 0)
+      : 0
+  useEffect(() => {
+    if (!deliveryMethods.some((method) => method.id === checkoutForm.deliveryMethod)) {
+      setCheckoutForm((current) => deliveryMethods.some((method) => method.id === current.deliveryMethod)
+        ? current
+        : { ...current, deliveryMethod: deliveryMethods[0]?.id || 'standard' })
+    }
+  }, [deliveryMethods, checkoutForm.deliveryMethod])
   // No silent fallback to the first account: while the customer is choosing a
   // payment kind (empty id) nothing is selected, and place-order stays blocked.
   const selectedPaymentAccount = paymentMethods.find((payment) => payment.id === checkoutForm.paymentAccountId) || null
@@ -809,6 +964,7 @@ export default function App() {
     setAuthNotice('')
     const form = new FormData(event.currentTarget)
     const isSignup = authMode === 'signup'
+    const isPasswordReset = authFlow === 'forgot'
     const password = String(form.get('password') || '')
     if (isSignup && password !== String(form.get('confirmPassword') || '')) {
       setError('Passwords do not match.')
@@ -816,24 +972,64 @@ export default function App() {
     }
     setAuthBusy(true)
     try {
-      const email = String(form.get('email') || form.get('identifier') || '').trim()
-      const isPasswordReset = authFlow === 'forgot'
+      const email = String(form.get('email') || '').trim()
+      const phone = String(form.get('phone') || '').trim()
       if (isPasswordReset) {
-        await shopData.requestPasswordReset(email)
-        setAuthFlow('login')
-        setAuthNotice('If an account exists for that email, a password reset link has been sent.')
+        const emailReset = phone.includes('@')
+        const response = await fetch(emailReset ? '/api/customer/forgot/request' : '/api/customer/phone/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailReset ? { email: phone } : { phone, mode: 'reset-password' })
+        })
+        const result = await readJsonResponse(response, 'Unable to send a password reset code.')
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to send a password reset code.'))
+        if (!result.challengeId) throw new Error('The password reset API returned no verification request.')
+        setAuthChallengeId(result.challengeId)
+        setAuthResetToken('')
+        setAuthOtpPurpose(emailReset ? 'reset-email' : 'reset-password')
+        setAuthPhone(result.phone || phone)
+        setAuthFlow('otp')
+        setAuthNotice(result.developmentOnlyCode
+          ? `Local test OTP: ${result.developmentOnlyCode}. No SMS was sent.`
+          : result.message || (emailReset
+            ? 'A password reset code was sent to your email address.'
+            : 'A verification code was sent to your phone.'))
         return
       }
-      const result = isSignup
-        ? await shopData.signUp({ name: String(form.get('name') || ''), phone: String(form.get('phone') || ''), email, password })
-        : await shopData.signIn({ email, password })
-      const authUser = result.user
-      if (!authUser) throw new Error('Check your email to confirm your account before logging in.')
-      const profile = await shopData.getProfile()
-      const customer = profile || { id: authUser.id, name: authUser.user_metadata?.full_name || '', email: authUser.email, phone: authUser.user_metadata?.phone || '' }
+      const identifier = String(form.get('identifier') || '').trim()
+      const loginUrl = identifier.includes('@') ? '/api/customer/login' : '/api/customer/phone/login'
+      const response = await fetch(isSignup ? '/api/customer/register' : loginUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isSignup
+          ? {
+              name: String(form.get('name') || ''),
+              phone,
+              email,
+              password,
+              confirmPassword: String(form.get('confirmPassword') || '')
+            }
+          : {
+              ...(identifier.includes('@') ? { email: identifier } : { identifier }),
+              password
+            })
+      })
+      const result = await readJsonResponse(response, isSignup ? 'Unable to create the account.' : 'Unable to log in.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, isSignup ? 'Unable to create the account.' : 'Unable to log in.'))
+      if (isSignup) {
+        if (!result.challengeId) throw new Error('The registration API returned no verification request.')
+        setAuthChallengeId(result.challengeId)
+        setAuthOtpPurpose('signup')
+        setAuthPhone(email)
+        setAuthFlow('otp')
+        setAuthNotice(result.message || 'A verification code was sent to your email address.')
+        return
+      }
+      if (!result.customer) throw new Error('The login API returned no customer profile.')
       setCartSyncReadyFor('')
-      setUser({ ...customer, name: customer.full_name || customer.name })
+      setUser(result.customer)
       setRoute({ page: 'main' })
+      setAuthFlow('login')
     } catch (authError) {
       setError(authError?.message || (isSignup ? 'Unable to create the account. Please try again.' : isPasswordReset ? 'Unable to send a verification code. Please try again.' : 'Unable to log in. Please try again.'))
     } finally {
@@ -865,14 +1061,35 @@ export default function App() {
     setError('')
     setAuthNotice('')
     try {
-      const response = await fetch('/api/customer/phone/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: authChallengeId, otp }) })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Unable to verify the code.')
+      const emailVerification = authOtpPurpose === 'signup'
+      const emailPasswordReset = authOtpPurpose === 'reset-email'
+      const verificationUrl = emailVerification
+        ? '/api/customer/otp/verify'
+        : emailPasswordReset
+          ? '/api/customer/forgot/verify'
+          : '/api/customer/phone/verify'
+      const response = await fetch(verificationUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId: authChallengeId, otp })
+      })
+      const result = await readJsonResponse(response, 'Unable to verify the code.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to verify the code.'))
+      if (emailPasswordReset) {
+        if (!result.resetToken) throw new Error('The password reset API returned no reset token.')
+        setAuthResetToken(result.resetToken)
+        setAuthFlow('reset-password')
+        return
+      }
+      if (!result.customer) throw new Error('The verification API returned no customer profile.')
       setCartSyncReadyFor('')
       setUser(result.customer)
       setError('')
       if (authOtpPurpose === 'reset-password') setAuthFlow('reset-password')
-      else setRoute({ page: 'main' })
+      else {
+        setAuthFlow('login')
+        setRoute({ page: 'main' })
+      }
     } catch (authError) {
       setError(authError.message || 'Unable to verify the code.')
     } finally {
@@ -886,17 +1103,34 @@ export default function App() {
     setError('')
     setAuthNotice('')
     try {
-      const password = String(new FormData(event.currentTarget).get('password') || '')
-      const response = await fetch('/api/customer/phone/password', {
+      const form = new FormData(event.currentTarget)
+      const password = String(form.get('password') || '')
+      const emailReset = authOtpPurpose === 'reset-email'
+      const response = await fetch(emailReset ? '/api/customer/forgot/reset' : '/api/customer/phone/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify(emailReset
+          ? {
+              resetToken: authResetToken,
+              password,
+              confirmPassword: String(form.get('confirmPassword') || '')
+            }
+          : { password })
       })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Unable to update your password.')
-      setUser(result.customer)
-      setCartSyncReadyFor('')
-      setRoute({ page: 'main' })
+      const result = await readJsonResponse(response, 'Unable to update your password.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to update your password.'))
+      if (emailReset) {
+        setAuthResetToken('')
+        setAuthOtpPurpose('')
+        setAuthFlow('login')
+        setAuthMode('signin')
+        setAuthNotice('Password updated. Please log in with your new password.')
+      } else {
+        if (!result.customer) throw new Error('The password API returned no customer profile.')
+        setUser(result.customer)
+        setCartSyncReadyFor('')
+        setRoute({ page: 'main' })
+      }
     } catch (authError) {
       setError(authError.message || 'Unable to update your password.')
     } finally {
@@ -909,13 +1143,21 @@ export default function App() {
     setError('')
     setAuthNotice('')
     try {
-      const response = await fetch('/api/customer/phone/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: authChallengeId }) })
-      const result = await response.json()
+      const emailVerification = authOtpPurpose === 'signup' || authOtpPurpose === 'reset-email'
+      const response = await fetch(emailVerification ? '/api/customer/otp/resend' : '/api/customer/phone/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId: authChallengeId })
+      })
+      const result = await readJsonResponse(response, 'Unable to resend the code.')
       if (!response.ok) throw new Error(result.error || 'Unable to resend the code.')
+      if (result.challengeId) setAuthChallengeId(result.challengeId)
       setAuthPhone(result.phone || authPhone)
       setAuthNotice(result.developmentOnlyCode
         ? `Local test OTP: ${result.developmentOnlyCode}. No SMS was sent.`
-        : 'A verification code was sent to your phone.')
+        : result.message || (emailVerification
+          ? 'A verification code was sent to your email address.'
+          : 'A verification code was sent to your phone.'))
     } catch (authError) {
       setError(authError.message || 'Unable to resend the code.')
     } finally {
@@ -1044,34 +1286,110 @@ export default function App() {
     return true
   }
 
-  function addAddress(address) {
-    setAddressBook((current) => {
-      const next = current.map((item) => ({ ...item, default: address.default ? false : item.default }))
-      const id = globalThis.crypto?.randomUUID?.() || `address-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      return [...next, { ...address, id }]
-    })
+  function persistGuestAddressBook(next) {
+    try {
+      const books = JSON.parse(localStorage.getItem('hto_customer_addresses') || '{}')
+      localStorage.setItem('hto_customer_addresses', JSON.stringify({ ...books, guest: next }))
+    } catch (storageError) {
+      console.warn('[account] Could not persist guest saved addresses.', storageError)
+      throw new Error('Unable to save your address on this device.')
+    }
   }
 
-  function updateAddress(addressId, patch) {
-    setAddressBook((current) => current.map((item) => {
-      if (item.id !== addressId) return patch.default ? { ...item, default: false } : item
-      return { ...item, ...patch }
-    }))
+  async function addAddress(address) {
+    try {
+      let savedAddress
+      if (user?.id) {
+        const response = await fetch('/api/customer/addresses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(address)
+        })
+        const result = await readJsonResponse(response, 'Unable to save your address.')
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to save your address.'))
+        savedAddress = result.address
+      } else {
+        const id = globalThis.crypto?.randomUUID?.() || `address-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        savedAddress = { ...address, id, default: Boolean(address.default) || !addressBook.length }
+        const next = savedAddress.default
+          ? [savedAddress, ...addressBook.map((item) => ({ ...item, default: false }))]
+          : [...addressBook, savedAddress]
+        persistGuestAddressBook(next)
+      }
+      setAddressBook((current) => savedAddress.default
+        ? [savedAddress, ...current.map((item) => ({ ...item, default: false }))]
+        : [savedAddress, ...current])
+      setError('')
+      return savedAddress
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save your address.')
+      return null
+    }
   }
 
-  function removeAddress(addressId) {
-    setAddressBook((current) => {
-      const next = current.filter((item) => item.id !== addressId)
+  async function updateAddress(addressId, patch) {
+    try {
+      let updatedAddress
+      if (user?.id) {
+        const response = await fetch(`/api/customer/addresses/${encodeURIComponent(addressId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        })
+        const result = await readJsonResponse(response, 'Unable to update your address.')
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to update your address.'))
+        updatedAddress = result.address
+      } else {
+        updatedAddress = { ...addressBook.find((item) => item.id === addressId), ...patch }
+        const next = addressBook.map((item) => item.id === addressId
+          ? updatedAddress
+          : patch.default ? { ...item, default: false } : item)
+        persistGuestAddressBook(next)
+      }
+      setAddressBook((current) => current.map((item) => item.id === addressId
+        ? updatedAddress
+        : updatedAddress.default ? { ...item, default: false } : item))
+      setError('')
+      return true
+    } catch (updateError) {
+      setError(updateError.message || 'Unable to update your address.')
+      return false
+    }
+  }
+
+  async function removeAddress(addressId) {
+    try {
+      if (user?.id) {
+        const response = await fetch(`/api/customer/addresses/${encodeURIComponent(addressId)}`, { method: 'DELETE' })
+        const result = await readJsonResponse(response, 'Unable to delete your address.')
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to delete your address.'))
+      }
+      const next = addressBook.filter((item) => item.id !== addressId)
       if (!next.some((item) => item.default) && next.length) next[0] = { ...next[0], default: true }
-      return next
-    })
+      if (!user?.id) persistGuestAddressBook(next)
+      setAddressBook(next)
+      setError('')
+      return true
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete your address.')
+      return false
+    }
   }
 
   async function updateProfile(profile) {
-    const customer = await shopData.updateProfile(profile)
-    const updated = { ...customer, name: customer.full_name }
-    setUser(updated)
-    return updated
+    const response = await fetch('/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: String(profile.name || profile.full_name || ''),
+        phone: String(profile.phone || '')
+      })
+    })
+    const result = await readJsonResponse(response, 'Unable to update your profile.')
+    if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to update your profile.'))
+    if (!result.customer) throw new Error('The customer API returned no updated profile.')
+    setUser(result.customer)
+    return result.customer
   }
 
   function validateCheckoutStep(step) {
@@ -1242,28 +1560,17 @@ export default function App() {
       console.info('[checkout] Order saved; clearing cart and opening confirmation', {
         orderId: savedOrder.id
       })
-      setOrders((current) => [savedOrder, ...current])
-      setSelectedOrder(savedOrder)
+      const mappedOrder = mapCustomerOrder(savedOrder)
+      setOrders((current) => [mappedOrder, ...current.filter((item) => item.id !== mappedOrder.id)])
+      setSelectedOrder(mappedOrder)
       // The server has already consumed the ordered lines; mirror exactly what is left.
       setCart((current) => mergeCartLines(current, remainingCartFor(savedOrder, orderedCart, checkoutCart)))
       setPaymentSlip('')
       setCoupon('')
       try { localStorage.removeItem('hto_checkout_draft') } catch (storageError) { console.warn('[checkout] Could not clear checkout draft.', storageError) }
-      if (checkoutForm.saveAddress && checkoutForm.shippingAddress) {
-        addAddress({
-          label: 'Home',
-          fullName: checkoutForm.name || user?.name || '',
-          phone: checkoutForm.phone || user?.phone || '',
-          region: checkoutForm.city || '',
-          township: checkoutForm.township || '',
-          addressLine: checkoutForm.shippingAddress,
-          value: [checkoutForm.shippingAddress, checkoutForm.township, checkoutForm.city].filter(Boolean).join(', '),
-          default: addressBook.length === 0
-        })
-      }
       setError('')
       setRoute({ page: 'confirmation' })
-      return savedOrder
+      return mappedOrder
     } catch (submitError) {
       console.error('[checkout] Unexpected error while placing order', submitError)
       const detail = submitError?.message || String(submitError)
@@ -1275,7 +1582,12 @@ export default function App() {
   }
 
   function logout() {
-    void shopData.signOut().catch((logoutError) => console.warn('[auth] Sign-out failed.', logoutError))
+    fetch('/api/customer/logout', { method: 'POST' })
+      .then(async (response) => {
+        const result = await readJsonResponse(response, 'Unable to end the customer session.')
+        if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to end the customer session.'))
+      })
+      .catch((logoutError) => console.warn('[auth] Sign-out failed.', logoutError))
     try { localStorage.removeItem('hto_guest_mode') } catch {}
     setCartSyncReadyFor('')
     setUser(null)
@@ -1313,6 +1625,19 @@ export default function App() {
     }
   }
 
+  const getDeliveryTrackingUrl = (companyName, trackingNumber) => {
+    const company = storefrontDeliveryCompanies.find((item) => item.name === companyName)
+    if (!company?.trackingUrl || !trackingNumber) return ''
+    try {
+      const target = company.trackingUrl.replace(/\{CODE\}/gi, encodeURIComponent(trackingNumber))
+      const url = new URL(target, window.location.origin)
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : ''
+    } catch (trackingError) {
+      console.warn('[delivery] Invalid tracking URL configured for delivery company.', trackingError)
+      return ''
+    }
+  }
+
   const sharedProps = {
     route,
     setRoute,
@@ -1338,6 +1663,9 @@ export default function App() {
     storefrontBanners,
     storefrontSections,
     storefrontLayout,
+    storefrontHelpItems,
+    storefrontDeliveryCompanies,
+    getDeliveryTrackingUrl,
     supportChannels,
     supportChannelsLoading,
     supportChannelsError,
@@ -1383,6 +1711,7 @@ export default function App() {
     filteredProducts,
     wishlistProducts,
     cartSubtotal,
+    cartShippingWeightKg,
     deliveryFee,
     selectedPaymentAccount,
     isCashPayment,
@@ -1410,8 +1739,9 @@ export default function App() {
     placeOrder,
     logout,
     MAIN_TABS,
-    CATEGORY_TREE,
-    DELIVERY_METHODS,
+    CATEGORY_TREE: categoryTree,
+    storefrontCategories,
+    DELIVERY_METHODS: deliveryMethods,
     formatPrice
   }
 

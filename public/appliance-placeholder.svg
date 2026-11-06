@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
+  <rect width="640" height="640" rx="40" fill="#F4F7F5"/>
+  <circle cx="320" cy="298" r="190" fill="#E4F0E8"/>
+  <path d="M239 424h162l-15-168H254l-15 168Z" fill="#fff" stroke="#087A52" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M268 256v-47c0-29 23-52 52-52s52 23 52 52v47" stroke="#087A52" stroke-width="12" stroke-linecap="round"/>
+  <path d="M276 305h88" stroke="#D7E2DC" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="320" cy="359" r="18" fill="#15966B"/>
+  <path d="M286 424v28c0 11 9 20 20 20h28c11 0 20-9 20-20v-28" fill="#E4F0E8" stroke="#087A52" stroke-width="12" stroke-linejoin="round"/>
+  <text x="320" y="530" text-anchor="middle" fill="#737B76" font-family="Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="3">HTOO SAMPLE</text>
+</svg>

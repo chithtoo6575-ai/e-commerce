@@ -20,7 +20,7 @@ export default function HomeSectionsPage({
 
   const sortedSections = [...sections].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
 
-  const handleMove = (index, direction) => {
+  const handleMove = async (index, direction) => {
     const targetIndex = index + direction
     if (targetIndex < 0 || targetIndex >= sortedSections.length) return
 
@@ -31,14 +31,22 @@ export default function HomeSectionsPage({
 
     // Reassign sort orders
     const updated = newSections.map((sec, idx) => ({ ...sec, sortOrder: idx + 1 }))
-    onSaveSections?.(updated)
-    showToast?.('Section order updated', 'info')
+    try {
+      await onSaveSections?.(updated)
+      showToast?.('Section order updated', 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update home section order.', 'error')
+    }
   }
 
-  const handleToggleStatus = (sec) => {
+  const handleToggleStatus = async (sec) => {
     const updated = sortedSections.map((s) => s.id === sec.id ? { ...s, enabled: !s.enabled } : s)
-    onSaveSections?.(updated)
-    showToast?.(`Section "${sec.title}" is now ${sec.enabled ? 'Disabled' : 'Enabled'}`, 'info')
+    try {
+      await onSaveSections?.(updated)
+      showToast?.(`Section "${sec.title}" is now ${sec.enabled ? 'Disabled' : 'Enabled'}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update home section.', 'error')
+    }
   }
 
   return (
@@ -161,7 +169,7 @@ export default function HomeSectionsPage({
         <SectionModal
           section={editingSection}
           onClose={() => setEditingSection(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = sortedSections.some((s) => s.id === saved.id)
             let updated
             if (exists) {
@@ -169,9 +177,13 @@ export default function HomeSectionsPage({
             } else {
               updated = [...sortedSections, saved]
             }
-            onSaveSections?.(updated)
-            showToast?.(exists ? 'Section updated' : 'Section created', 'success')
-            setEditingSection(null)
+            try {
+              await onSaveSections?.(updated)
+              showToast?.(exists ? 'Section updated' : 'Section created', 'success')
+              setEditingSection(null)
+            } catch (saveError) {
+              showToast?.(saveError.message || 'Unable to save home section.', 'error')
+            }
           }}
         />
       )}
@@ -183,11 +195,15 @@ export default function HomeSectionsPage({
         message={adminT("Are you sure you want to remove this section from the storefront homepage?")}
         confirmText={adminT("Delete Section")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = sortedSections.filter((s) => s.id !== deleteConfirmId)
-          onSaveSections?.(updated)
-          showToast?.('Section deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveSections?.(updated)
+            showToast?.('Section deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete home section.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />

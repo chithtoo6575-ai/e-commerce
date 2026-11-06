@@ -13,10 +13,10 @@ export default function HomeLayoutPage({
   onSaveLayout,
   showToast
 }) {
-  const [blocks, setBlocks] = useState(layout.filter((block) => block.id !== 'block-categories').sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)))
+  const blocks = layout.filter((block) => block.id !== 'block-categories').sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   const [previewOpen, setPreviewOpen] = useState(false)
 
-  const handleMove = (index, direction) => {
+  const handleMove = async (index, direction) => {
     const target = index + direction
     if (target < 0 || target >= blocks.length) return
     const updated = [...blocks]
@@ -25,25 +25,34 @@ export default function HomeLayoutPage({
     updated[target] = temp
 
     const reordered = updated.map((b, idx) => ({ ...b, sortOrder: idx + 1 }))
-    setBlocks(reordered)
-    onSaveLayout?.(reordered)
-    showToast?.('Homepage layout updated', 'info')
+    try {
+      await onSaveLayout?.(reordered)
+      showToast?.('Homepage layout updated', 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update homepage layout.', 'error')
+    }
   }
 
-  const handleToggle = (id) => {
+  const handleToggle = async (id) => {
     const updated = blocks.map((b) => b.id === id ? { ...b, enabled: !b.enabled } : b)
-    setBlocks(updated)
-    onSaveLayout?.(updated)
-    const block = updated.find((b) => b.id === id)
-    showToast?.(`Block "${block.name}" is now ${block.enabled ? 'Visible' : 'Hidden'}`, 'info')
+    try {
+      await onSaveLayout?.(updated)
+      const block = updated.find((b) => b.id === id)
+      showToast?.(`Block "${block.name}" is now ${block.enabled ? 'Visible' : 'Hidden'}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update homepage layout.', 'error')
+    }
   }
 
-  const handleResetDefault = () => {
+  const handleResetDefault = async () => {
     // Reset to standard order
     const reset = blocks.map((b, idx) => ({ ...b, enabled: true, sortOrder: idx + 1 }))
-    setBlocks(reset)
-    onSaveLayout?.(reset)
-    showToast?.('Reset layout to default order', 'success')
+    try {
+      await onSaveLayout?.(reset)
+      showToast?.('Reset layout to default order', 'success')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to reset homepage layout.', 'error')
+    }
   }
 
   return (

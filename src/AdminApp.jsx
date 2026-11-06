@@ -194,59 +194,132 @@ export default function AdminApp() {
   }
 
   const handleDeleteProduct = async (id) => {
-    try {
-      await adminFetch(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' })
-    } catch {}
+    const response = await adminFetch(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || adminT('Unable to delete product.'))
     setData((prev) => {
       if (!prev) return prev
       return { ...prev, products: (prev.products || []).filter((p) => String(p.id) !== String(id)) }
     })
-    return true
+    return result
+  }
+
+  const handleUpdateCustomerStatus = async (customerId, status) => {
+    const response = await adminFetch(`/api/admin/customers/${encodeURIComponent(customerId)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || adminT('Unable to update customer status.'))
+    if (!result.customer) throw new Error(adminT('The customer API returned no updated customer.'))
+    setData((prev) => prev ? {
+      ...prev,
+      customers: (prev.customers || []).map((customer) =>
+        String(customer.id) === String(result.customer.id) ? result.customer : customer
+      )
+    } : prev)
+    return result.customer
   }
 
   // Category CRUD
   const handleSaveCategory = async (category) => {
-    const isEdit = Boolean(category.id && data?.categories?.some((c) => c.id === category.id))
-    try {
-      const url = isEdit ? `/api/admin/categories/${encodeURIComponent(category.id)}` : '/api/admin/categories'
-      const method = isEdit ? 'PATCH' : 'POST'
-      const res = await adminFetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(category)
-      })
-      if (res.ok) {
-        const result = await res.json()
-        setData((prev) => {
-          if (!prev) return prev
-          const updated = isEdit
-            ? prev.categories.map((c) => c.id === category.id ? result.category : c)
-            : [...(prev.categories || []), result.category]
-          return { ...prev, categories: updated }
-        })
-        return true
-      }
-    } catch {}
-
-    // Local state fallback
+    const isEdit = Boolean(category.id && data?.categories?.some((item) => String(item.id) === String(category.id)))
+    const previousCategory = isEdit
+      ? data.categories.find((item) => String(item.id) === String(category.id))
+      : null
+    const url = isEdit ? `/api/admin/categories/${encodeURIComponent(category.id)}` : '/api/admin/categories'
+    const response = await adminFetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(category)
+    })
+    const result = await readJsonResponse(response, adminT('Unable to save category.'))
+    if (response.status === 401) {
+      handleExpiredSession()
+      throw new Error('Your Admin session has expired. Please sign in again.')
+    }
+    if (!response.ok) throw new Error(apiErrorMessage(result, adminT('Unable to save category.')))
+    if (!result.category) throw new Error('The category API returned no saved category.')
     setData((prev) => {
       if (!prev) return prev
-      const updated = isEdit
-        ? prev.categories.map((c) => c.id === category.id ? category : c)
-        : [...(prev.categories || []), category]
-      return { ...prev, categories: updated }
+      const categories = isEdit
+        ? prev.categories.map((item) => String(item.id) === String(result.category.id) ? result.category : item)
+        : [...(prev.categories || []), result.category]
+      const products = previousCategory && previousCategory.name !== result.category.name
+        ? (prev.products || []).map((product) =>
+          product.categoryId === previousCategory.id || product.category === previousCategory.id || product.category === previousCategory.name
+            ? { ...product, category: result.category.name, categoryId: result.category.id }
+            : product
+        )
+        : prev.products
+      return { ...prev, categories, products }
     })
-    return true
+    return result.category
   }
 
   const handleDeleteCategory = async (id) => {
-    try {
-      await adminFetch(`/api/admin/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
-    } catch {}
+    const response = await adminFetch(`/api/admin/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const result = await readJsonResponse(response, adminT('Unable to delete category.'))
+    if (response.status === 401) {
+      handleExpiredSession()
+      throw new Error('Your Admin session has expired. Please sign in again.')
+    }
+    if (!response.ok) throw new Error(apiErrorMessage(result, adminT('Unable to delete category.')))
     setData((prev) => {
       if (!prev) return prev
       return { ...prev, categories: (prev.categories || []).filter((c) => c.id !== id && c.name !== id) }
     })
+    return true
+  }
+
+  const handleSaveSubCategory = async (subCategory) => {
+    const isEdit = Boolean(subCategory.id && data?.subCategories?.some((item) => String(item.id) === String(subCategory.id)))
+    const previousSubCategory = isEdit
+      ? data.subCategories.find((item) => String(item.id) === String(subCategory.id))
+      : null
+    const url = isEdit ? `/api/admin/sub-categories/${encodeURIComponent(subCategory.id)}` : '/api/admin/sub-categories'
+    const response = await adminFetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subCategory)
+    })
+    const result = await readJsonResponse(response, adminT('Unable to save subcategory.'))
+    if (response.status === 401) {
+      handleExpiredSession()
+      throw new Error('Your Admin session has expired. Please sign in again.')
+    }
+    if (!response.ok) throw new Error(apiErrorMessage(result, adminT('Unable to save subcategory.')))
+    if (!result.subCategory) throw new Error('The subcategory API returned no saved subcategory.')
+    setData((prev) => {
+      if (!prev) return prev
+      const subCategories = isEdit
+        ? (prev.subCategories || []).map((item) => String(item.id) === String(result.subCategory.id) ? result.subCategory : item)
+        : [...(prev.subCategories || []), result.subCategory]
+      const products = previousSubCategory && previousSubCategory.name !== result.subCategory.name
+        ? (prev.products || []).map((product) =>
+          product.subCategoryId === previousSubCategory.id
+            ? { ...product, subCategory: result.subCategory.name, subCategoryId: result.subCategory.id }
+            : product
+        )
+        : prev.products
+      return { ...prev, subCategories, products }
+    })
+    return result.subCategory
+  }
+
+  const handleDeleteSubCategory = async (id) => {
+    const response = await adminFetch(`/api/admin/sub-categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const result = await readJsonResponse(response, adminT('Unable to delete subcategory.'))
+    if (response.status === 401) {
+      handleExpiredSession()
+      throw new Error('Your Admin session has expired. Please sign in again.')
+    }
+    if (!response.ok) throw new Error(apiErrorMessage(result, adminT('Unable to delete subcategory.')))
+    setData((prev) => prev ? {
+      ...prev,
+      subCategories: (prev.subCategories || []).filter((item) => String(item.id) !== String(id))
+    } : prev)
     return true
   }
 
@@ -313,8 +386,11 @@ export default function AdminApp() {
       onAddStockMovement={handleAddStockMovement}
       onSaveProduct={handleSaveProduct}
       onDeleteProduct={handleDeleteProduct}
+      onUpdateCustomerStatus={handleUpdateCustomerStatus}
       onSaveCategory={handleSaveCategory}
       onDeleteCategory={handleDeleteCategory}
+      onSaveSubCategory={handleSaveSubCategory}
+      onDeleteSubCategory={handleDeleteSubCategory}
       onUpdateOrder={handleUpdateOrder}
       language={language}
       onLanguageChange={changeLanguage}

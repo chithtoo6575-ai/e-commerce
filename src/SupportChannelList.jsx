@@ -12,6 +12,7 @@ export default function SupportChannelList({
   onRetry,
   tr = (text) => text,
   onNotify,
+  helpItems = [],
   compact = false
 }) {
   const activeChannels = mergeSupportChannels(channels)
@@ -81,6 +82,18 @@ export default function SupportChannelList({
           <h4>{tr('No support channels available')}</h4>
           <p>{tr('Please check back later for shop contact options.')}</p>
         </div>
+      )}
+
+      {helpItems.length > 0 && (
+        <section className="support-help-items">
+          <h4>{tr('Common questions')}</h4>
+          {helpItems.map((item) => (
+            <details key={item.id}>
+              <summary>{tr(item.question)}</summary>
+              <p>{tr(item.answer)}</p>
+            </details>
+          ))}
+        </section>
       )}
     </div>
   )

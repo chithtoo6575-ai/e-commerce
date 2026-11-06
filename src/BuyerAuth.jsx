@@ -22,6 +22,8 @@ export default function BuyerAuth({
 }) {
   const tr = (text) => t(text, language)
   const verifying = authFlow === 'otp'
+  const emailVerification = verifying && (otpPurpose === 'signup' || otpPurpose === 'reset-email')
+  const emailPasswordReset = otpPurpose === 'reset-email'
   const resettingPassword = authFlow === 'reset-password'
   const forgotPassword = authFlow === 'forgot'
   const credentialsScreen = !verifying && !resettingPassword && !forgotPassword
@@ -57,8 +59,8 @@ export default function BuyerAuth({
     <main className="buyer-auth-screen">
       <section className="buyer-auth-card" aria-labelledby="buyer-auth-title">
         <div className="buyer-auth-heading">
-          {!credentialsScreen && <p className="buyer-auth-eyebrow">{verifying ? tr('PHONE VERIFICATION') : resettingPassword ? tr('PASSWORD RESET') : tr('ACCOUNT RECOVERY')}</p>}
-          <h1 id="buyer-auth-title">{verifying ? tr('Verify your phone') : resettingPassword ? tr('Create a new password') : forgotPassword ? tr('Forgot password?') : authMode === 'signup' ? tr('Create account') : tr('Log in')}</h1>
+          {!credentialsScreen && <p className="buyer-auth-eyebrow">{verifying ? tr(emailVerification ? 'EMAIL VERIFICATION' : 'PHONE VERIFICATION') : resettingPassword ? tr('PASSWORD RESET') : tr('ACCOUNT RECOVERY')}</p>}
+          <h1 id="buyer-auth-title">{verifying ? tr(emailVerification ? 'Verify your email' : 'Verify your phone') : resettingPassword ? tr('Create a new password') : forgotPassword ? tr('Forgot password?') : authMode === 'signup' ? tr('Create account') : tr('Log in')}</h1>
           {verifying && <p className="buyer-auth-subtitle">{tr('Enter the 6-digit code sent to')} <strong>{authPhone}</strong></p>}
         </div>
 
@@ -83,13 +85,17 @@ export default function BuyerAuth({
             <button className="buyer-auth-primary" type="submit" disabled={busy}>{busy ? tr('Please wait…') : otpPurpose === 'signup' ? tr('Create account') : tr('Verify code')}</button>
             <div className="buyer-auth-footer">
               <button className="buyer-auth-link" type="button" onClick={onResendOtp} disabled={busy}>{tr('Resend code')}</button>
-              <button className="buyer-auth-link" type="button" onClick={() => { setError(''); setAuthFlow('login') }}>{tr('Change phone number')}</button>
+              <button className="buyer-auth-link" type="button" onClick={() => { setError(''); setAuthFlow('login') }}>{tr(emailVerification ? 'Change email address' : 'Change phone number')}</button>
             </div>
           </form>
         ) : resettingPassword ? (
           <form className="buyer-auth-form" onSubmit={onResetPassword}>
             <label className="buyer-auth-label" htmlFor="buyer-new-password">{tr('New password')}</label>
             <input id="buyer-new-password" className="buyer-auth-input" name="password" type="password" autoComplete="new-password" minLength={8} maxLength={256} placeholder={tr('At least 8 characters')} required />
+            {emailPasswordReset && <>
+              <label className="buyer-auth-label" htmlFor="buyer-confirm-new-password">{tr('Confirm password')}</label>
+              <input id="buyer-confirm-new-password" className="buyer-auth-input" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={256} placeholder={tr('Confirm your password')} required />
+            </>}
             {error && <p className="buyer-auth-error" role="alert">{tr(error)}</p>}
             {notice && <p className="buyer-auth-notice" role="status">{tr(notice)}</p>}
             <button className="buyer-auth-primary" type="submit" disabled={busy}>{busy ? tr('Please wait…') : tr('Update password')}</button>
@@ -101,15 +107,20 @@ export default function BuyerAuth({
               <label className="buyer-auth-label" htmlFor="buyer-name">{tr('Name')}</label>
               <input id="buyer-name" className="buyer-auth-input" name="name" autoComplete="name" placeholder={tr('Enter your name')} maxLength={120} required />
             </>}
-            <label className="buyer-auth-label" htmlFor="buyer-phone">{forgotPassword ? tr('Phone number') : authMode === 'signup' ? tr('Phone number') : tr('Phone number or Email')}</label>
+            <label className="buyer-auth-label" htmlFor="buyer-phone">{forgotPassword ? tr('Phone number or Email') : authMode === 'signup' ? tr('Phone number') : tr('Phone number or Email')}</label>
             <input
               id="buyer-phone"
               className="buyer-auth-input"
               name={authMode === 'signin' && !forgotPassword ? 'identifier' : 'phone'}
-              type={authMode === 'signin' && !forgotPassword ? 'text' : 'tel'}
-              inputMode={authMode === 'signin' && !forgotPassword ? 'text' : 'tel'}
-              autoComplete={authMode === 'signin' && !forgotPassword ? 'username' : 'tel'}
+              type={authMode === 'signup' ? 'tel' : 'text'}
+              inputMode={authMode === 'signup' ? 'tel' : 'text'}
+              autoComplete={authMode === 'signup' ? 'tel' : 'username'}
               {...(authMode === 'signin' && !forgotPassword ? {
+                placeholder: tr('09xxxxxxxxx or you@email.com'),
+                maxLength: 254
+              } : forgotPassword ? {
+                value: authPhone,
+                onChange: (event) => setAuthPhone(event.target.value),
                 placeholder: tr('09xxxxxxxxx or you@email.com'),
                 maxLength: 254
               } : {

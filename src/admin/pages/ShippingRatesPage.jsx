@@ -27,13 +27,17 @@ export default function ShippingRatesPage({
     })
   }, [rates, searchTerm])
 
-  const handleToggleStatus = (rate) => {
+  const handleToggleStatus = async (rate) => {
     const updated = rates.map((r) =>
       r.id === rate.id ? { ...r, status: r.status === 'Active' ? 'Inactive' : 'Active' } : r
     )
-    onSaveRates?.(updated)
     const newStatus = rate.status === 'Active' ? 'Inactive' : 'Active'
-    showToast?.(`Shipping zone "${rate.region}" is now ${newStatus}`, 'info')
+    try {
+      await onSaveRates?.(updated)
+      showToast?.(`Shipping zone "${rate.region}" is now ${newStatus}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update shipping rate.', 'error')
+    }
   }
 
   return (
@@ -170,7 +174,7 @@ export default function ShippingRatesPage({
         <ShippingRateModal
           rate={editingRate}
           onClose={() => setEditingRate(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = rates.some((r) => r.id === saved.id)
             let updated
             if (exists) {
@@ -178,9 +182,13 @@ export default function ShippingRatesPage({
             } else {
               updated = [...rates, saved]
             }
-            onSaveRates?.(updated)
-            showToast?.(exists ? 'Shipping rate updated' : 'Shipping rate added', 'success')
-            setEditingRate(null)
+            try {
+              await onSaveRates?.(updated)
+              showToast?.(exists ? 'Shipping rate updated' : 'Shipping rate added', 'success')
+              setEditingRate(null)
+            } catch (saveError) {
+              showToast?.(saveError.message || 'Unable to save shipping rate.', 'error')
+            }
           }}
         />
       )}
@@ -192,11 +200,15 @@ export default function ShippingRatesPage({
         message={adminT("Are you sure you want to remove this delivery zone and shipping rate?")}
         confirmText={adminT("Delete Rate")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = rates.filter((r) => r.id !== deleteConfirmId)
-          onSaveRates?.(updated)
-          showToast?.('Shipping rate deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveRates?.(updated)
+            showToast?.('Shipping rate deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete shipping rate.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />

@@ -6,8 +6,12 @@ import AdminApp from './AdminApp.jsx'
 import AppErrorBoundary from './AppErrorBoundary.jsx'
 import { isAdminPath } from './admin/adminRouter.js'
 
+const adminPath = isAdminPath()
+document.body.classList.toggle('admin-app', adminPath)
+document.body.classList.toggle('storefront-app', !adminPath)
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AppErrorBoundary>{isAdminPath() ? <AdminApp /> : <App />}</AppErrorBoundary>
+    <AppErrorBoundary>{adminPath ? <AdminApp /> : <App />}</AppErrorBoundary>
   </StrictMode>,
 )

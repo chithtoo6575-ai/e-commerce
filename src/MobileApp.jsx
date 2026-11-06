@@ -11,6 +11,7 @@ import SupportChannelList from './SupportChannelList'
 
 // Header mark: white letterform only (no cart glyph, no shadow).
 const HEADER_LOGO_URL = `${getBasePath()}/logo-white.svg`
+const APPLIANCE_PLACEHOLDER_URL = `${getBasePath()}/appliance-placeholder.svg`
 
 function hasValidCartVariants(item, product) {
   const { sizes, colors } = getProductVariants(product)
@@ -158,6 +159,7 @@ export default function MobileApp({
   authNotice,
   resetCustomerPassword,
   user,
+  storefrontCategories = [],
   storefrontBanners = [],
   storefrontSections = [],
   storefrontLayout = [],
@@ -166,6 +168,8 @@ export default function MobileApp({
   supportChannelsError = '',
   loadSupportChannels,
   storefrontNotifications = [],
+  storefrontHelpItems = [],
+  getDeliveryTrackingUrl,
   language,
   setLanguage,
   guestMode,
@@ -204,6 +208,7 @@ export default function MobileApp({
   _filteredProducts,
   wishlistProducts,
   cartSubtotal,
+  cartShippingWeightKg,
   deliveryFee,
   selectedPaymentAccount,
   isCashPayment,
@@ -228,7 +233,7 @@ export default function MobileApp({
   handlePaymentSlip,
   placeOrder,
   logout,
-  CATEGORY_TREE: _CATEGORY_TREE,
+  CATEGORY_TREE,
   DELIVERY_METHODS,
   formatPrice
 }) {
@@ -236,7 +241,16 @@ export default function MobileApp({
   const deepLinkedProductId = new URLSearchParams(window.location.search).get('product')
   const currentTab = deepLinkedProductId ? 'explore' : activeTab === 'categories' || activeTab === 'search' ? 'explore' : activeTab
   const tr = (text) => t(text, language)
+  const imageForCategory = (category) =>
+    storefrontCategories.find((item) => item.name === category)?.image ||
+    products.find((product) => product.category === category && product.image)?.image ||
+    APPLIANCE_PLACEHOLDER_URL
   const [selectedMobileCategory, setSelectedMobileCategory] = useState(selectedCategory || 'All')
+  useEffect(() => {
+    if (selectedMobileCategory !== 'All' && !Object.hasOwn(CATEGORY_TREE || {}, selectedMobileCategory)) {
+      setSelectedMobileCategory('All')
+    }
+  }, [CATEGORY_TREE, selectedMobileCategory])
   const [selectedProduct, setSelectedProduct] = useState(null)
   const viewingProduct = selectedProduct || products.find((product) => String(product.id) === deepLinkedProductId) || null
   const storefrontError = error || (deepLinkedProductId && catalogStatus !== 'loading' && !viewingProduct ? t('This product is no longer available.', language) : '')
@@ -250,6 +264,7 @@ export default function MobileApp({
   const bannerIndexRef = useRef(0)
   const bannerTrackRef = useRef(null)
   const bannerResumeTimeoutRef = useRef(null)
+  const bannerScrollEndTimeoutRef = useRef(null)
   const [bannerAutoplayPaused, setBannerAutoplayPaused] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia?.('(max-width: 767px)')?.matches ?? true)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false)
@@ -294,8 +309,21 @@ export default function MobileApp({
     if (!Array.isArray(storefrontNotifications)) return
     const adminIds = new Set(storefrontNotifications.map((notification) => notification.id))
     const now = new Date().toISOString()
+    const createdAt = Date.parse(user?.createdAt || user?.created_at || '')
+    const isNewCustomer = Number.isFinite(createdAt) && Date.now() - createdAt < 30 * 24 * 60 * 60 * 1000
+    const latestOrderAt = Math.max(0, ...orders.map((order) => Date.parse(order.createdAt || order.created_at || '') || 0))
+    const isInactiveCustomer = orders.length > 0 && latestOrderAt < Date.now() - 60 * 24 * 60 * 60 * 1000
+    const isVipCustomer = user?.isVip === true || user?.vip === true ||
+      ['vip', 'gold'].includes(String(user?.tier || user?.customerType || '').toLowerCase())
     const published = storefrontNotifications
-      .filter((notification) => notification.status === 'Sent' || (notification.status === 'Scheduled' && (!notification.date || notification.date <= now)))
+      .filter((notification) => {
+        const isPublished = notification.status === 'Sent' || (notification.status === 'Scheduled' && (!notification.date || notification.date <= now))
+        if (!isPublished) return false
+        if (notification.audience === 'New Customers') return isNewCustomer
+        if (notification.audience === 'Inactive Customers') return isInactiveCustomer
+        if (notification.audience === 'VIP Customers') return isVipCustomer
+        return notification.audience === 'All Customers' || !notification.audience
+      })
       .sort((first, second) => String(second.date || '').localeCompare(String(first.date || '')))
     setNotifications((current) => {
       const readById = new Map(current.map((notification) => [notification.id, notification.read]))
@@ -307,7 +335,7 @@ export default function MobileApp({
         ...current.filter((notification) => !adminIds.has(notification.id))
       ]
     })
-  }, [storefrontNotifications])
+  }, [storefrontNotifications, user, orders])
 
   useEffect(() => {
     try { localStorage.setItem('hto_customer_notifications', JSON.stringify(notifications)) } catch (storageError) {
@@ -354,15 +382,7 @@ export default function MobileApp({
     let list = [...products]
     const effectiveCategory = selectedMobileCategory !== 'All' ? selectedMobileCategory : (currentTab === 'explore' && selectedCategory ? selectedCategory : '')
     if (effectiveCategory && effectiveCategory !== 'All') {
-      if (effectiveCategory === 'Sale') {
-        list = list.filter((p) => p.oldPrice != null || p.category === 'Sale')
-      } else if (effectiveCategory === 'Bags') {
-        list = list.filter((p) => /bag/i.test(`${p.category} ${p.subcategory}`))
-      } else if (effectiveCategory === 'New Collection') {
-        list = list.slice().reverse().slice(0, 12)
-      } else {
-        list = list.filter((p) => p.category === effectiveCategory)
-      }
+      list = list.filter((product) => product.category === effectiveCategory || product.subcategory === effectiveCategory)
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -413,7 +433,7 @@ export default function MobileApp({
   }, [products])
   const bestSellers = useMemo(() => [...products].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 4), [products])
   const newArrivals = useMemo(() => products.slice().reverse().slice(0, 4), [products])
-  const dealProducts = useMemo(() => products.filter((p) => p.oldPrice != null || p.category === 'Sale').slice(0, 4), [products])
+  const dealProducts = useMemo(() => products.filter((product) => Number(product.oldPrice) > Number(product.price)).slice(0, 4), [products])
   const recommendedProducts = useMemo(() => products.slice(1, 5), [products])
   const homeSections = useMemo(() => {
     const productsBySource = {
@@ -454,10 +474,25 @@ export default function MobileApp({
   ].sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0)), [activeBanners, homeSections, storefrontLayout])
   const hasHomeBanner = homeItems.some((item) => item.kind === 'banner')
   const currentBannerIndex = activeBanners.length ? activeBannerIndex % activeBanners.length : 0
+  const mobileBannerSlides = activeBanners.length > 1
+    ? [
+        { banner: activeBanners[activeBanners.length - 1], bannerIndex: activeBanners.length - 1, clone: 'last' },
+        ...activeBanners.map((banner, bannerIndex) => ({ banner, bannerIndex, clone: '' })),
+        { banner: activeBanners[0], bannerIndex: 0, clone: 'first' }
+      ]
+    : activeBanners.map((banner, bannerIndex) => ({ banner, bannerIndex, clone: '' }))
 
   useEffect(() => {
     bannerIndexRef.current = currentBannerIndex
   }, [currentBannerIndex])
+
+  useEffect(() => {
+    const track = bannerTrackRef.current
+    if (!track || !activeBanners.length || currentTab !== 'home' || route.page !== 'main' || !isMobileViewport) return
+    track.scrollLeft = track.clientWidth
+    bannerIndexRef.current = 0
+    setActiveBannerIndex(0)
+  }, [activeBanners.length, currentTab, route.page, isMobileViewport])
 
   useEffect(() => {
     const mobileQuery = window.matchMedia('(max-width: 767px)')
@@ -482,7 +517,6 @@ export default function MobileApp({
       selectedMobileCategory !== 'All' ||
       !hasHomeBanner ||
       !isMobileViewport ||
-      prefersReducedMotion ||
       bannerAutoplayPaused ||
       activeBanners.length < 2
     ) return
@@ -491,12 +525,10 @@ export default function MobileApp({
       const track = bannerTrackRef.current
       if (!track || !track.children.length) return
       const nextIndex = (bannerIndexRef.current + 1) % activeBanners.length
-      const slide = track.children[nextIndex]
-      const left = slide ? slide.offsetLeft : nextIndex * (track.clientWidth || 0)
-      track.scrollTo({ left, behavior: 'smooth' })
+      track.scrollTo({ left: (nextIndex + 1) * track.clientWidth, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
       bannerIndexRef.current = nextIndex
       setActiveBannerIndex(nextIndex)
-    }, 3500)
+    }, 4000)
     return () => window.clearInterval(timer)
   }, [
     route.page,
@@ -510,7 +542,10 @@ export default function MobileApp({
     activeBanners.length
   ])
 
-  useEffect(() => () => window.clearTimeout(bannerResumeTimeoutRef.current), [])
+  useEffect(() => () => {
+    window.clearTimeout(bannerResumeTimeoutRef.current)
+    window.clearTimeout(bannerScrollEndTimeoutRef.current)
+  }, [])
 
   function pauseBannerAutoplay() {
     window.clearTimeout(bannerResumeTimeoutRef.current)
@@ -519,18 +554,49 @@ export default function MobileApp({
 
   function resumeBannerAutoplaySoon() {
     window.clearTimeout(bannerResumeTimeoutRef.current)
-    bannerResumeTimeoutRef.current = window.setTimeout(() => setBannerAutoplayPaused(false), 5000)
+    bannerResumeTimeoutRef.current = window.setTimeout(() => setBannerAutoplayPaused(false), 1000)
   }
 
   function selectBanner(index) {
     const track = bannerTrackRef.current
-    const slide = track?.children[index]
-    if (!track || !slide) return
+    if (!track || index < 0 || index >= activeBanners.length) return
     pauseBannerAutoplay()
-    track.scrollTo({ left: slide.offsetLeft, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
+    track.scrollTo({ left: (index + 1) * track.clientWidth, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
     bannerIndexRef.current = index
     setActiveBannerIndex(index)
     resumeBannerAutoplaySoon()
+  }
+
+  function handleBannerScroll(event) {
+    const track = event.currentTarget
+    const width = track.clientWidth
+    const count = activeBanners.length
+    if (!width || !count) return
+
+    const page = Math.round(track.scrollLeft / width)
+    if (count > 1 && (page === 0 || page === count + 1)) {
+      const index = page === 0 ? count - 1 : 0
+      bannerIndexRef.current = index
+      setActiveBannerIndex(index)
+      window.clearTimeout(bannerScrollEndTimeoutRef.current)
+      bannerScrollEndTimeoutRef.current = window.setTimeout(() => {
+        const settledPage = Math.round(track.scrollLeft / track.clientWidth)
+        if (settledPage !== 0 && settledPage !== count + 1) return
+        track.style.scrollBehavior = 'auto'
+        track.scrollLeft = (settledPage === 0 ? count : 1) * track.clientWidth
+        window.requestAnimationFrame(() => {
+          track.style.scrollBehavior = ''
+        })
+      }, 120)
+      return
+    }
+
+    window.clearTimeout(bannerScrollEndTimeoutRef.current)
+    const index = Math.max(0, Math.min(count - 1, page - 1))
+    if (index !== bannerIndexRef.current) {
+      bannerIndexRef.current = index
+      setActiveBannerIndex(index)
+    }
   }
 
   // Handle Add to Cart with feedback
@@ -611,7 +677,7 @@ export default function MobileApp({
     })
   }
 
-  function handleSaveAddress(event) {
+  async function handleSaveAddress(event) {
     event.preventDefault()
     const errors = {}
     if (!addressForm.fullName.trim()) errors.fullName = 'Please enter your full name.'
@@ -640,11 +706,13 @@ export default function MobileApp({
       value: `${addressForm.addressLine.trim()}, ${addressForm.township}, ${addressForm.region}`,
       default: addressForm.isDefault || !addressBook.length
     }
+    const saved = editingAddressId
+      ? await updateAddress(editingAddressId, payload)
+      : await addAddress(payload)
+    if (!saved) return
     if (editingAddressId) {
-      updateAddress(editingAddressId, payload)
       showToast(tr('Address updated.'))
     } else {
-      addAddress(payload)
       showToast(tr('New address saved!'))
     }
     setEditingAddressId('')
@@ -984,6 +1052,34 @@ export default function MobileApp({
                 </div>
               </section>
 
+              {/* 3. Delivery method */}
+              <section className="mob-co-card">
+                <header className="mob-co-card-head">
+                  <h2 className="mob-co-card-title">{tr('Delivery method')}</h2>
+                </header>
+                <div className="mob-co-items">
+                  {DELIVERY_METHODS.map((method) => {
+                    const fee = method.rate
+                      ? method.rate.freeThreshold > 0 && cartSubtotal >= method.rate.freeThreshold
+                        ? 0
+                          : Number(method.rate.baseFee) + Math.ceil(Number(method.rate.additionalFee || 0) * cartShippingWeightKg)
+                      : method.id === 'cargate' ? settings.carGatePickupFee : 0
+                    return (
+                      <label key={method.id} className="inline-check">
+                        <input
+                          type="radio"
+                          name="mobile-delivery"
+                          checked={checkoutForm.deliveryMethod === method.id}
+                          onChange={() => setCheckoutForm((current) => ({ ...current, deliveryMethod: method.id }))}
+                        />
+                        {tr(method.label)}
+                        <strong>{formatPrice(fee)}</strong>
+                      </label>
+                    )
+                  })}
+                </div>
+              </section>
+
               {/* 3. Payment summary */}
               <section className="mob-co-card">
                 <div className="mob-co-summary">
@@ -1187,11 +1283,15 @@ export default function MobileApp({
     {catalogStatus === 'error' && <div className="mob-catalog-status error" role="alert">{tr('We could not refresh the catalog. Showing available products.')}</div>}
     {storefrontError && <div className="mob-global-error" role="alert">{tr(storefrontError)}</div>}
 
-      {(activeTab === 'home' || activeTab === 'search') && (
+      {(activeTab === 'home' || activeTab === 'search' || activeTab === 'categories') && (
         <header className="mob-header">
           <div className="mob-header-inner">
             <button className="mob-logo" aria-label={tr('HTOO Home')} onClick={() => { setActiveTab('home'); setSelectedMobileCategory('All'); setSearchQuery('') }}>
               <img className="mob-logo-image" src={HEADER_LOGO_URL} alt="" aria-hidden="true" />
+                <span className="mob-logo-text">
+                  <strong className="mob-logo-brand">HTOO</strong>
+                  <small className="mob-logo-sub">{tr('HOME & LIVING')}</small>
+                </span>
             </button>
 
             <div className="mob-header-search">
@@ -1233,17 +1333,7 @@ export default function MobileApp({
       {currentTab === 'explore' && (
         <>
           <div className="mob-categories-scroll">
-            {[
-              ['All', '✦'],
-              ['Men', '◉'],
-              ['Women', '♡'],
-              ['Kids', '☆'],
-              ['Shoes', '⌁'],
-              ['Bags', '▱'],
-              ['Accessories', '◇'],
-              ['New Collection', '✧'],
-              ['Sale', '%']
-            ].map(([cat, icon]) => {
+            {[['All', '◫'], ...Object.keys(CATEGORY_TREE || {}).map((category, index) => [category, ['◉', '⌂', '♨', '▣', '◍', '⌕', '⌁', '⌘'][index % 8]])].map(([cat, icon]) => {
               const isActive = selectedMobileCategory === cat
               return (
                 <button
@@ -1252,8 +1342,7 @@ export default function MobileApp({
                   aria-pressed={isActive}
                   onClick={() => {
                     setSelectedMobileCategory(cat)
-                    if (currentTab === 'home') setActiveTab('search')
-                    setSelectedCategory?.(cat === 'All' || cat === 'Sale' ? '' : cat)
+                    setSelectedCategory?.(cat === 'All' ? '' : cat)
                   }}
                 >
                   <span className="mob-category-icon" aria-hidden="true">{icon}</span>
@@ -1269,10 +1358,39 @@ export default function MobileApp({
          TAB 1: HOME PAGE
          -------------------------------------------------------------------- */}
       {currentTab === 'home' && !searchQuery.trim() && selectedMobileCategory === 'All' && (
-        <>
+        <div className="mob-home-layout">
+          <section className="mob-home-categories mob-home-layout-categories" aria-labelledby="mob-home-categories-title">
+            <div className="mob-section-head">
+              <div>
+                <h3 id="mob-home-categories-title" className="mob-section-title">{tr('Shop by Category')}</h3>
+                <p className="mob-section-subtitle">{tr('Find the right appliance for your home')}</p>
+              </div>
+              <button className="mob-section-see-all" onClick={() => { setSelectedMobileCategory('All'); setActiveTab('categories') }}>{tr('See All')}</button>
+            </div>
+            <div className="mob-home-category-grid">
+              {Object.keys(CATEGORY_TREE || {}).map((category, index) => {
+                const image = imageForCategory(category)
+                const icon = ['◉', '⌂', '♨', '▣', '◍', '⌕', '⌁', '⌘'][index % 8]
+                return (
+                  <button
+                    className="mob-home-category-card"
+                    key={category}
+                    onClick={() => { setSelectedMobileCategory(category); setSelectedCategory?.(category); setActiveTab('categories') }}
+                  >
+                    <span className="mob-home-category-icon" aria-hidden="true">{icon}</span>
+                    <span>{tr(category)}</span>
+                    <img src={image} alt="" loading="lazy" />
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+          {products.some((product) => product.demoData) && (
+            <p className="mob-demo-note mob-home-layout-demo" role="note">{tr('Demo prices and stock')}</p>
+          )}
           {homeItems.map((item) => item.kind === 'banner' ? (
             <section
-              className="mob-banner-carousel"
+              className="mob-banner-carousel mob-home-layout-banner"
               aria-label={tr('Promotions')}
               key={item.id}
               onPointerDown={pauseBannerAutoplay}
@@ -1282,24 +1400,35 @@ export default function MobileApp({
               <div
                 className="mob-banner-track"
                 ref={bannerTrackRef}
-                onScroll={(event) => {
-                  const track = event.currentTarget
-                  const step = track.clientWidth || 1
-                  const idx = Math.min(activeBanners.length - 1, Math.max(0, Math.round(track.scrollLeft / step)))
-                  bannerIndexRef.current = idx
-                  setActiveBannerIndex(idx)
-                }}
+                onScroll={handleBannerScroll}
               >
-                {activeBanners.map((banner, index) => (
-                  <div className="mob-banner-slide" key={banner.id || `banner-${index}`}>
-                    <img
-                      src={banner.image}
-                      alt={banner.altText || tr('Store promotion')}
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none'
-                      }}
-                    />
+                {mobileBannerSlides.map(({ banner, bannerIndex, clone }) => (
+                  <div
+                    className="mob-banner-slide"
+                    key={`${banner.id || `banner-${bannerIndex}`}${clone ? `-${clone}-clone` : ''}`}
+                    aria-hidden={Boolean(clone) || undefined}
+                  >
+                    {banner.link ? (
+                      <a className="mob-banner-link" href={banner.link} tabIndex={clone ? -1 : undefined}>
+                        <img
+                          src={banner.image}
+                          alt={clone ? '' : (language === 'my' ? banner.altTextMy || banner.altText : banner.altText) || tr('Store promotion')}
+                          loading={!clone && bannerIndex === 0 ? 'eager' : 'lazy'}
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </a>
+                    ) : (
+                      <img
+                        src={banner.image}
+                        alt={clone ? '' : (language === 'my' ? banner.altTextMy || banner.altText : banner.altText) || tr('Store promotion')}
+                        loading={!clone && bannerIndex === 0 ? 'eager' : 'lazy'}
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1318,7 +1447,7 @@ export default function MobileApp({
               )}
             </section>
           ) : (
-            <section className="mob-section" key={item.id}>
+            <section className="mob-section mob-home-layout-products" key={item.id}>
               <div className="mob-section-head">
                 <div>
                   <h3 className="mob-section-title">{tr(item.title)}</h3>
@@ -1342,7 +1471,7 @@ export default function MobileApp({
               </div>
             </section>
           ))}
-        </>
+        </div>
       )}
 
       {/* FILTERED OR SEARCH RESULTS (On Home or Explore) */}
@@ -1350,9 +1479,28 @@ export default function MobileApp({
         <section className="mob-section">
           <div className="mob-section-head">
             <h3 className="mob-section-title">
-              {searchQuery ? `${tr('Search Results')} (${mobileDisplayProducts.length})` : `${tr(selectedMobileCategory)} (${mobileDisplayProducts.length})`}
+              {searchQuery.trim()
+                ? `${tr('Search Results')} (${mobileDisplayProducts.length})`
+                : `${tr(selectedMobileCategory === 'All' ? 'Browse Products' : selectedMobileCategory)} (${mobileDisplayProducts.length})`}
             </h3>
           </div>
+          {currentTab === 'explore' && !searchQuery.trim() && (
+            <div className="mob-category-page-grid">
+              {Object.keys(CATEGORY_TREE || {}).map((category) => {
+                const image = imageForCategory(category)
+                return (
+                  <button
+                    className={selectedMobileCategory === category ? 'active' : ''}
+                    key={category}
+                    onClick={() => { setSelectedMobileCategory(category); setSelectedCategory?.(category) }}
+                  >
+                    <img src={image} alt="" loading="lazy" />
+                    <span>{tr(category)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <div className="mob-product-grid">
             {mobileDisplayProducts.map((product) => (
               <MobileProductCard
@@ -1397,7 +1545,7 @@ export default function MobileApp({
                 <div key={product.id} className="mob-wishlist-card">
                   <div className="mob-wish-card-img-wrap" onClick={() => setViewingProduct(product)}>
                     <img className="mob-wish-card-img" src={product.image} alt={product.name} />
-                    {product.oldPrice && (
+                    {Number(product.oldPrice) > Number(product.price) && (
                       <span className="mob-badge-discount">
                         -{Math.round(((product.oldPrice - product.price) / product.oldPrice) * 100)}%
                       </span>
@@ -1419,7 +1567,7 @@ export default function MobileApp({
                       </div>
                       <div className="mob-card-price-row">
                         <span className="mob-card-price">{formatPrice(product.price)}</span>
-                        {product.oldPrice && <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span>}
+                        {Number(product.oldPrice) > Number(product.price) && <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span>}
                       </div>
                     </div>
                     <div className="mob-wish-actions">
@@ -1718,18 +1866,32 @@ export default function MobileApp({
           <span className="mob-nav-label">{tr('Home')}</span>
         </button>
 
-        {/* Search and category discovery */}
+        {/* Categories */}
         <button
           className={`mob-nav-item ${currentTab === 'explore' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('search'); setSelectedMobileCategory('All') }}
+          onClick={() => { setActiveTab('categories'); setSelectedMobileCategory('All'); setSearchQuery('') }}
         >
           <div className="mob-nav-icon-wrap">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-4-4" />
+            <svg width="22" height="22" viewBox="0 0 24 24" fill={currentTab === 'explore' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="8" height="8" rx="1.5" />
+              <rect x="13" y="3" width="8" height="8" rx="1.5" />
+              <rect x="3" y="13" width="8" height="8" rx="1.5" />
+              <rect x="13" y="13" width="8" height="8" rx="1.5" />
             </svg>
           </div>
-          <span className="mob-nav-label">{tr('Search')}</span>
+          <span className="mob-nav-label">{tr('Categories')}</span>
+        </button>
+
+        {/* Cart */}
+        <button
+          className={`mob-nav-item mob-nav-cart ${currentTab === 'cart' ? 'active' : ''}`}
+          onClick={() => setActiveTab('cart')}
+          aria-label={`${tr('Cart')}${cartCount ? `, ${cartCount} ${tr('items')}` : ''}`}
+        >
+          <div className="mob-nav-icon-wrap">
+            <CartIcon count={cartCount} />
+          </div>
+          <span className="mob-nav-label">{tr('Cart')}</span>
         </button>
 
         {/* Wishlist */}
@@ -1757,7 +1919,7 @@ export default function MobileApp({
               <circle cx="12" cy="7" r="4" />
             </svg>
           </div>
-          <span className="mob-nav-label">{tr('Account')}</span>
+          <span className="mob-nav-label">{tr('Profile')}</span>
         </button>
       </nav>
 
@@ -1890,11 +2052,14 @@ export default function MobileApp({
                           </span>
                         </div>
                         <div className="mob-order-items-preview">
-                          {(ord.items || []).map((it) => `${it.name} (×${it.quantity})`).join(', ') || 'Order details'}
+                          {(ord.items || []).map((it) => `${it.name} (×${it.quantity}) · ${formatPrice(it.price)}`).join(', ') || 'Order details'}
                         </div>
                         <div className="mob-order-footer">
-                          <strong style={{ fontSize: '0.9rem', color: 'var(--mob-brand-dark)' }}>{formatPrice(ord.total)}</strong>
-                          <span className="mob-order-card-chevron" aria-hidden="true">›</span>
+                          <span>
+                            <strong style={{ fontSize: '0.9rem', color: 'var(--mob-brand-dark)' }}>{formatPrice(ord.total)}</strong>
+                            {ord.createdAt && !Number.isNaN(Date.parse(ord.createdAt)) && <small style={{ display: 'block', color: 'var(--mob-muted)' }}>{new Date(ord.createdAt).toLocaleDateString()}</small>}
+                          </span>
+                          <span className="mob-order-card-chevron">{tr('View Details')} ›</span>
                         </div>
                       </button>
                     ))
@@ -2242,6 +2407,7 @@ export default function MobileApp({
                     onRetry={loadSupportChannels}
                     tr={tr}
                     onNotify={setSupportNotice}
+                    helpItems={storefrontHelpItems}
                   />
 
                   <p className="sr-only" role="status" aria-live="polite">{supportNotice}</p>
@@ -2261,13 +2427,18 @@ export default function MobileApp({
                     <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
                       Total: <strong>{formatPrice(selectedOrder.total)}</strong> · Payment: {selectedOrder.paymentStatus}
                     </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
+                      {tr('Order date')}: {selectedOrder.createdAt && !Number.isNaN(Date.parse(selectedOrder.createdAt)) ? new Date(selectedOrder.createdAt).toLocaleString() : tr('Not available')}
+                    </div>
                   </div>
 
                   <div className="mob-order-timeline">
-                    {['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered'].map((status) => {
-                      const statusIndex = ['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered'].indexOf(selectedOrder.status)
-                      const currentIndex = ['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered'].indexOf(status)
-                      return <div key={status} className={currentIndex <= statusIndex ? 'complete' : ''}><i />{tr(status)}</div>
+                    {['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered'].map((status) => {
+                      const statuses = ['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered']
+                      const statusIndex = statuses.indexOf(selectedOrder.status)
+                      const currentIndex = statuses.indexOf(status)
+                      const statusUpdate = (selectedOrder.statusHistory || []).find((entry) => entry.status === status)
+                      return <div key={status} className={currentIndex <= statusIndex ? 'complete' : ''}><i />{tr(status)}{statusUpdate?.at && <small>{new Date(statusUpdate.at).toLocaleString()}</small>}</div>
                     })}
                     {selectedOrder.status === 'Cancelled' && <div className="cancelled">{tr('Cancelled')}</div>}
                   </div>
@@ -2282,16 +2453,20 @@ export default function MobileApp({
                             </small>
                           )}
                         </span>
-                        <strong>{formatPrice(item.lineTotal ?? item.price * item.quantity)}</strong>
+                        <strong>{formatPrice(item.lineTotal ?? item.price * item.quantity)}<small style={{ display: 'block', color: 'var(--mob-muted)' }}>{formatPrice(item.price)} {tr('each')}</small></strong>
                       </div>
                     ))}
                   </div>
                   <div className="mob-order-detail-items">
+                    <div>{tr('Name')}<strong>{selectedOrder.customer?.name || tr('Not specified')}</strong></div>
+                    <div>{tr('Phone Number')}<strong>{selectedOrder.customer?.phone || tr('Not specified')}</strong></div>
                     <div>{tr('Payment method')}<strong>{selectedOrder.paymentMethod || tr('Not specified')}</strong></div>
                     <div>{tr('Payment status')}<strong>{tr(selectedOrder.paymentStatus || 'Pending')}</strong></div>
                     <div>{tr('Shipping address')}<strong>{selectedOrder.customer?.address || tr('Not specified')}</strong></div>
                     <div>{tr('Delivery method')}<strong>{tr(selectedOrder.deliveryMethod || 'Not specified')}</strong></div>
-                    {selectedOrder.trackingNumber && <div>{tr('Tracking number')}<strong>{selectedOrder.trackingNumber}</strong></div>}
+                    {selectedOrder.trackingNumber && <div>{tr('Tracking number')}<strong>{selectedOrder.trackingNumber}{getDeliveryTrackingUrl?.(selectedOrder.deliveryCompany, selectedOrder.trackingNumber) && <> · <a href={getDeliveryTrackingUrl(selectedOrder.deliveryCompany, selectedOrder.trackingNumber)} target="_blank" rel="noopener noreferrer">{tr('Track delivery')}</a></>}</strong></div>}
+                    {selectedOrder.deliveryCompany && <div>{tr('Delivery company')}<strong>{selectedOrder.deliveryCompany}</strong></div>}
+                    <div>{tr('Shipping status')}<strong>{tr(selectedOrder.shippingStatus || 'Preparing')}</strong></div>
                     <div>{tr('Subtotal')}<strong>{formatPrice(selectedOrder.subtotal || 0)}</strong></div>
                     <div>{tr('Discount')}<strong>−{formatPrice(selectedOrder.discount || 0)}</strong></div>
                     <div>{tr('Shipping fee')}<strong>{formatPrice(selectedOrder.shippingFee ?? selectedOrder.deliveryFee ?? 0)}</strong></div>
@@ -2350,10 +2525,10 @@ export default function MobileApp({
               <div className="mob-sheet-scroll">
                 <h4>{tr('Category')}</h4>
                 <div className="mob-search-category-list">
-                  {['All', '✦', 'Women', 'Kids', 'Shoes', 'Bags', 'Accessories', 'New Collection', 'Sale'].map((category) => (
+                  {['All', ...Object.keys(CATEGORY_TREE || {})].map((category) => (
                     <button key={category} className={`mob-chip ${selectedMobileCategory === category ? 'active' : ''}`} onClick={() => {
                       setSelectedMobileCategory(category)
-                      setSelectedCategory?.(category === 'All' || category === 'Sale' ? '' : category)
+                      setSelectedCategory?.(category === 'All' ? '' : category)
                     }}>{tr(category)}</button>
                   ))}
                 </div>
@@ -2464,6 +2639,7 @@ function MobileProductCard({ product, wished, onWish, onAdd, onSelect, formatPri
         <div className="mob-card-badges">
           {discountPercent ? <span className="mob-card-tag mob-card-tag--discount">{discountPercent}% OFF</span> : null}
           {!discountPercent && (product.isBestSeller || roundRating === 5) ? <span className="mob-card-tag mob-card-tag--best">{tr('Best Seller')}</span> : null}
+          {product.demoData && <span className="mob-card-tag mob-card-tag--sample">{tr('Demo')}</span>}
           {Number(product.stock) <= 0 ? <span className="mob-card-tag mob-card-tag--muted">{tr('Sold out')}</span> : null}
         </div>
 
@@ -2487,24 +2663,30 @@ function MobileProductCard({ product, wished, onWish, onAdd, onSelect, formatPri
       </div>
 
       <div className="mob-card-content">
+        <div className="mob-card-brand">{product.brand || 'HTOO'}</div>
         <h4 className="mob-card-title">{title}</h4>
+        <span className={`mob-card-stock${Number(product.stock) <= 0 ? ' unavailable' : ''}`}>
+          {Number(product.stock) <= 0 ? tr('Out of stock') : tr('In Stock')}
+        </span>
 
         <div className="mob-card-price-row">
           <span className="mob-card-price">{formatPrice(product.price)}</span>
-          {product.oldPrice ? <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span> : null}
+          {discountPercent ? <span className="mob-card-old-price">{formatPrice(product.oldPrice)}</span> : null}
         </div>
 
         <div className="mob-card-foot">
-          <div className="mob-card-rating" aria-label={`${rating.toFixed(1)} / 5, ${reviewLabel}`}>
-            <span className="mob-card-stars" aria-hidden="true">
-              {[0, 1, 2, 3, 4].map((index) => (
-                <svg key={index} viewBox="0 0 24 24" width="10" height="10" fill={index < roundRating ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
-                  <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z" />
-                </svg>
-              ))}
-            </span>
-            <span className="mob-card-reviews">{reviewLabel}</span>
-          </div>
+          {rating > 0 && (
+            <div className="mob-card-rating" aria-label={`${rating.toFixed(1)} / 5${reviewCount ? `, ${reviewLabel}` : ''}`}>
+              <span className="mob-card-stars" aria-hidden="true">
+                {[0, 1, 2, 3, 4].map((index) => (
+                  <svg key={index} viewBox="0 0 24 24" width="10" height="10" fill={index < roundRating ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+                    <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z" />
+                  </svg>
+                ))}
+              </span>
+              {reviewCount > 0 && <span className="mob-card-reviews">{reviewLabel}</span>}
+            </div>
+          )}
 
           <AddToCartButton
             className="mob-card-add-btn"
@@ -2666,6 +2848,7 @@ function MobileProductDetailSheet({ product, cart, cartCount, onClose, onOpenCar
                 ? `${tr('Choose options')} · ${Math.max(0, Number(product.stock) || 0)} ${tr('available')}`
                 : stock > 0 ? `${tr('In Stock')} · ${stock} ${tr('available')}` : tr('Out of stock')}
             </p>
+            {product.demoData && <p className="mob-demo-note">{tr('Demo prices and stock')}</p>}
           </section>
 
           {colors.length > 0 && (

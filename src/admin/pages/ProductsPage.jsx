@@ -99,26 +99,31 @@ export default function ProductsPage({
   // Bulk actions
   const handleExecuteBulkAction = async () => {
     if (!bulkActionConfirm) return
-    if (bulkActionConfirm === 'delete') {
-      for (const id of selectedIds) {
-        await onDeleteProduct?.(id)
+    try {
+      if (bulkActionConfirm === 'delete') {
+        for (const id of selectedIds) {
+          await onDeleteProduct?.(id)
+        }
+        showToast?.('Selected products deleted successfully', 'success')
+      } else if (bulkActionConfirm === 'activate') {
+        for (const id of selectedIds) {
+          const prod = products.find((p) => String(p.id) === String(id))
+          if (prod) await onSaveProduct?.({ ...prod, enabled: true, status: 'Active' })
+        }
+        showToast?.('Selected products marked active', 'success')
+      } else if (bulkActionConfirm === 'deactivate') {
+        for (const id of selectedIds) {
+          const prod = products.find((p) => String(p.id) === String(id))
+          if (prod) await onSaveProduct?.({ ...prod, enabled: false, status: 'Draft' })
+        }
+        showToast?.('Selected products moved to draft', 'success')
       }
-      showToast?.('Selected products deleted successfully', 'success')
-    } else if (bulkActionConfirm === 'activate') {
-      for (const id of selectedIds) {
-        const prod = products.find((p) => String(p.id) === String(id))
-        if (prod) await onSaveProduct?.({ ...prod, enabled: true, status: 'Active' })
-      }
-      showToast?.('Selected products marked active', 'success')
-    } else if (bulkActionConfirm === 'deactivate') {
-      for (const id of selectedIds) {
-        const prod = products.find((p) => String(p.id) === String(id))
-        if (prod) await onSaveProduct?.({ ...prod, enabled: false, status: 'Draft' })
-      }
-      showToast?.('Selected products moved to draft', 'success')
+    } catch (actionError) {
+      showToast?.(actionError.message || 'Unable to complete product action.', 'error')
+    } finally {
+      setSelectedIds([])
+      setBulkActionConfirm(null)
     }
-    setSelectedIds([])
-    setBulkActionConfirm(null)
   }
 
   return (
@@ -141,6 +146,7 @@ export default function ProductsPage({
             price: 25000,
             salePrice: 0,
             costPrice: 15000,
+            weightKg: 0,
             stock: 20,
             lowStockThreshold: 5,
             image: '',
@@ -451,9 +457,13 @@ export default function ProductsPage({
         confirmText={adminT("Delete")}
         danger={true}
         onConfirm={async () => {
-          await onDeleteProduct?.(deleteConfirmId)
-          showToast?.('Product deleted successfully', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onDeleteProduct?.(deleteConfirmId)
+            showToast?.('Product deleted successfully', 'success')
+            setDeleteConfirmId(null)
+          } catch (deleteError) {
+            showToast?.(deleteError.message || 'Unable to delete product.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />
@@ -485,6 +495,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     price: product.price ?? 25000,
     salePrice: product.salePrice ?? (product.discountPrice ?? 0),
     costPrice: product.costPrice ?? 15000,
+    weightKg: product.weightKg ?? 0,
     stock: product.stock ?? 20,
     lowStockThreshold: product.lowStockThreshold ?? 5,
     image: product.image || (Array.isArray(product.images) ? product.images[0] : '') || '',
@@ -527,6 +538,13 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
       colors: formData.variantColors.split(',').map((value) => value.trim()).filter(Boolean)
     }
   })
+  const selectedParentCategory = categories.find((category) =>
+    category.name === formData.category || String(category.id) === String(formData.category)
+  )
+  const availableSubCategories = subCategories.filter((subCategory) =>
+    subCategory.parentCategoryId === selectedParentCategory?.id ||
+    subCategory.parentCategoryId === selectedParentCategory?.name
+  )
   const variantStockTotal = variantStockOptions.reduce((total, option) => {
     const quantity = formData.variantStock[option.key]
     return Number.isSafeInteger(Number(quantity)) && String(quantity).trim() !== '' ? total + Number(quantity) : total
@@ -580,6 +598,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     if (!formData.nameEn.trim()) errs.nameEn = 'Product title is required'
     if (!formData.sku.trim()) errs.sku = 'SKU is required'
     if (Number(formData.price) <= 0) errs.price = 'Price must be greater than 0'
+    if (!Number.isFinite(Number(formData.weightKg)) || Number(formData.weightKg) < 0) errs.weightKg = 'Product shipping weight must be zero or more'
     if (Number(formData.stock) < 0) errs.stock = 'Stock cannot be negative'
     const variantStock = {}
     if (formData.trackVariantStock) {
@@ -645,6 +664,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
       price: Number(formData.price),
       salePrice: Number(formData.salePrice || 0),
       costPrice: Number(formData.costPrice || 0),
+      weightKg: Number(formData.weightKg || 0),
       stock: formData.trackVariantStock ? Object.values(variantStock).reduce((sum, quantity) => sum + quantity, 0) : Number(formData.stock),
       lowStockThreshold: Number(formData.lowStockThreshold),
       status: formData.enabled ? 'Active' : 'Draft'
@@ -693,7 +713,20 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
               <label>{adminT("Category *")}</label>
               <select
                 value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                onChange={(e) => {
+                  const nextCategory = categories.find((category) => category.name === e.target.value)
+                  const nextSubCategories = subCategories.filter((subCategory) =>
+                    subCategory.parentCategoryId === nextCategory?.id ||
+                    subCategory.parentCategoryId === nextCategory?.name
+                  )
+                  setFormData({
+                    ...formData,
+                    category: e.target.value,
+                    subCategory: nextSubCategories.some((subCategory) => subCategory.name === formData.subCategory)
+                      ? formData.subCategory
+                      : ''
+                  })
+                }}
               >
                 {categories.map((c) => (
                   <option key={c.id || c.name} value={c.name}>{c.name}</option>
@@ -708,7 +741,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                 onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
               >
                 <option value="">{adminT("None / General")}</option>
-                {subCategories.map((sc) => (
+                {availableSubCategories.map((sc) => (
                   <option key={sc.id} value={sc.name}>{sc.name}</option>
                 ))}
               </select>
@@ -759,7 +792,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
             </div>
           </div>
 
-          <div className="form-grid-2">
+          <div className="form-grid-3">
             <div className="form-group">
               <label>{adminT(formData.trackVariantStock ? 'Total Variant Stock' : 'Stock Quantity *')}</label>
               <input
@@ -782,6 +815,17 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                 value={formData.lowStockThreshold}
                 onChange={(e) => setFormData({ ...formData, lowStockThreshold: e.target.value })}
               />
+            </div>
+            <div className="form-group">
+              <label>{adminT("Weight (kg)")}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.weightKg}
+                onChange={(e) => setFormData({ ...formData, weightKg: e.target.value })}
+              />
+              {errors.weightKg && <span className="form-error">{adminT(errors.weightKg)}</span>}
             </div>
           </div>
 

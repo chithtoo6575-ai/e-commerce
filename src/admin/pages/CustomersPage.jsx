@@ -12,6 +12,7 @@ const formatMoney = (val) => `Ks ${Math.round(val || 0).toLocaleString('en-US')}
 export default function CustomersPage({
   customers = [],
   orders = [],
+  onUpdateCustomerStatus,
   showToast
 }) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -27,13 +28,14 @@ export default function CustomersPage({
       map.set(c.id || c.email || c.name, {
         id: c.id || `cust-${index + 1}`,
         name: c.name || 'Valued Customer',
-        email: c.email || 'customer@example.com',
-        phone: c.phone || '09-266172967',
-        ordersCount: c.orderCount || c.orderIds?.length || 0,
-        totalSpent: c.totalSpent || 0,
-        joinedDate: c.createdAt || '2026-09-01T00:00:00Z',
+        email: c.email || '',
+        phone: c.phone || '',
+        ordersCount: Number(c.orderCount ?? c.orderIds?.length ?? 0),
+        totalSpent: Number(c.totalSpent ?? c.totalPurchase ?? 0),
+        joinedDate: c.createdAt || '',
         status: c.status || 'Active',
-        address: c.address || 'Yangon, Myanmar'
+        statusManaged: Boolean(c.id),
+        address: c.address || ''
       })
     })
 
@@ -44,20 +46,23 @@ export default function CustomersPage({
       const key = cust.userId || cust.phone || cust.name
       const existing = map.get(key)
       if (existing) {
-        existing.ordersCount = Math.max(existing.ordersCount, (existing.ordersCount || 0) + 1)
-        existing.totalSpent += Number(o.total || 0)
+        if (!existing.statusManaged) {
+          existing.ordersCount += 1
+          existing.totalSpent += Number(o.total || 0)
+        }
         if (cust.address && !existing.address) existing.address = cust.address
       } else {
         map.set(key, {
           id: key,
           name: cust.name,
-          email: cust.email || 'guest@htooshop.mm',
-          phone: cust.phone || 'N/A',
+          email: cust.email || '',
+          phone: cust.phone || '',
           ordersCount: 1,
           totalSpent: Number(o.total || 0),
-          joinedDate: o.createdAt || '2026-10-01T00:00:00Z',
+          joinedDate: o.createdAt || '',
           status: 'Active',
-          address: cust.address || 'Yangon, Myanmar'
+          statusManaged: false,
+          address: cust.address || ''
         })
       }
     })
@@ -82,11 +87,21 @@ export default function CustomersPage({
     }).sort((a, b) => b.totalSpent - a.totalSpent)
   }, [enrichedCustomers, searchTerm, statusFilter])
 
-  const handleToggleStatus = (cust) => {
+  const handleToggleStatus = async (cust) => {
     const newStatus = cust.status === 'Active' ? 'Suspended' : 'Active'
-    showToast?.(`Customer account ${cust.name} marked ${newStatus}`, 'info')
-    if (selectedCustomer && selectedCustomer.id === cust.id) {
-      setSelectedCustomer((prev) => ({ ...prev, status: newStatus }))
+    if (!cust.statusManaged) {
+      showToast?.('Only registered customer accounts can be suspended.', 'error')
+      return
+    }
+    try {
+      const updatedCustomer = await onUpdateCustomerStatus?.(cust.id, newStatus)
+      if (!updatedCustomer) throw new Error('The customer status was not updated.')
+      showToast?.(`Customer account ${cust.name} marked ${newStatus}`, 'success')
+      setSelectedCustomer((current) => current && String(current.id) === String(cust.id)
+        ? { ...current, status: updatedCustomer.status }
+        : current)
+    } catch (statusError) {
+      showToast?.(statusError.message || 'Unable to update customer status.', 'error')
     }
   }
 
@@ -228,14 +243,15 @@ export default function CustomersPage({
             o.customer?.userId === selectedCustomer.id
           )}
           onClose={() => setSelectedCustomer(null)}
-          onToggleStatus={() => handleToggleStatus(selectedCustomer)}
+          onToggleStatus={() => { void handleToggleStatus(selectedCustomer) }}
+          canToggleStatus={selectedCustomer.statusManaged}
         />
       )}
     </div>
   )
 }
 
-function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus }) {
+function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus, canToggleStatus }) {
   const isVIP = customer.totalSpent >= 200000
 
   return (
@@ -310,12 +326,12 @@ function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus }) {
         </div>
 
         <div className="drawer-footer">
-          <button
+          {canToggleStatus && <button
             className={`admin-btn-secondary ${customer.status === 'Active' ? 'btn-danger-hover' : ''}`}
             onClick={onToggleStatus}
           >
             {adminT(customer.status === 'Active' ? 'Suspend Account' : 'Reactivate Account')}
-          </button>
+          </button>}
           <button className="admin-btn-secondary" onClick={onClose}>{' ' + adminT("Close") + ' '}</button>
         </div>
       </div>

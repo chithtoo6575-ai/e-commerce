@@ -20,13 +20,17 @@ export default function SupportChannelsPage({
 
   const sortedChannels = [...channels].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
 
-  const handleToggleStatus = (channel) => {
+  const handleToggleStatus = async (channel) => {
     const updated = sortedChannels.map((c) =>
       c.id === channel.id ? { ...c, status: c.status === 'Active' ? 'Inactive' : 'Active' } : c
     )
-    onSaveChannels?.(updated)
     const newStatus = channel.status === 'Active' ? 'Inactive' : 'Active'
-    showToast?.(`Support channel "${channel.channel || channel.name}" is now ${newStatus}`, 'info')
+    try {
+      await onSaveChannels?.(updated)
+      showToast?.(`Support channel "${channel.channel || channel.name}" is now ${newStatus}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update support channel.', 'error')
+    }
   }
 
   return (
@@ -130,7 +134,7 @@ export default function SupportChannelsPage({
         <ChannelModal
           channel={editingChannel}
           onClose={() => setEditingChannel(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = sortedChannels.some((c) => c.id === saved.id)
             let updated
             if (exists) {
@@ -138,7 +142,7 @@ export default function SupportChannelsPage({
             } else {
               updated = [...sortedChannels, saved]
             }
-            onSaveChannels?.(updated)
+            await onSaveChannels?.(updated)
             showToast?.(exists ? 'Support channel updated' : 'Support channel added', 'success')
             setEditingChannel(null)
           }}
@@ -152,11 +156,15 @@ export default function SupportChannelsPage({
         message={adminT("Are you sure you want to remove this support channel?")}
         confirmText={adminT("Delete Channel")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = sortedChannels.filter((c) => c.id !== deleteConfirmId)
-          onSaveChannels?.(updated)
-          showToast?.('Support channel deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveChannels?.(updated)
+            showToast?.('Support channel deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete support channel.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />
@@ -184,7 +192,9 @@ function ChannelModal({ channel, onClose, onSave }) {
       setError('Choose a channel and enter its account details or link.')
       return
     }
-    onSave(formData)
+    Promise.resolve(onSave(formData)).catch((saveError) => {
+      setError(saveError.message || 'Unable to save support channel.')
+    })
   }
 
   return (

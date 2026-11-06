@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="gold" x1="26" y1="15" x2="103" y2="108" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFE979"/>
-      <stop offset=".42" stop-color="#FFC72E"/>
-      <stop offset="1" stop-color="#D58A12"/>
+    <linearGradient id="green" x1="26" y1="15" x2="103" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#53B78A"/>
+      <stop offset=".42" stop-color="#15966B"/>
+      <stop offset="1" stop-color="#087A52"/>
     </linearGradient>
     <path id="h-shape" d="M24 16h18v30h44V16h18v94H86V64H42v46H24V16Z"/>
   </defs>
-  <use href="#h-shape" fill="#A9650C" transform="translate(2 2)"/>
-  <use href="#h-shape" fill="url(#gold)"/>
-  <g stroke="#8C5208" stroke-linecap="round" stroke-linejoin="round">
+  <use href="#h-shape" fill="#075E40" transform="translate(2 2)"/>
+  <use href="#h-shape" fill="url(#green)"/>
+  <g stroke="#075E40" stroke-linecap="round" stroke-linejoin="round">
     <path d="M44 70h5l4 18h23l5-14H51" stroke-width="4"/>
-    <circle cx="58" cy="94" r="3.5" fill="#8C5208" stroke="none"/>
-    <circle cx="72" cy="94" r="3.5" fill="#8C5208" stroke="none"/>
-    <path d="M45 77h3M43 83h4M42 89h5" stroke="#FFF4B5" stroke-width="3"/>
+    <circle cx="58" cy="94" r="3.5" fill="#075E40" stroke="none"/>
+    <circle cx="72" cy="94" r="3.5" fill="#075E40" stroke="none"/>
+    <path d="M45 77h3M43 83h4M42 89h5" stroke="#E4F0E8" stroke-width="3"/>
   </g>
 </svg>

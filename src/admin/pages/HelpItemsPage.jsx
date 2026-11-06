@@ -39,7 +39,7 @@ export default function HelpItemsPage({
     })
   }, [sortedItems, searchTerm, categoryFilter])
 
-  const handleMove = (index, direction) => {
+  const handleMove = async (index, direction) => {
     const target = index + direction
     if (target < 0 || target >= sortedItems.length) return
     const updated = [...sortedItems]
@@ -48,17 +48,25 @@ export default function HelpItemsPage({
     updated[target] = temp
 
     const reordered = updated.map((it, idx) => ({ ...it, sortOrder: idx + 1 }))
-    onSaveHelpItems?.(reordered)
-    showToast?.('Help items reordered', 'info')
+    try {
+      await onSaveHelpItems?.(reordered)
+      showToast?.('Help items reordered', 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to reorder help items.', 'error')
+    }
   }
 
-  const handleToggleStatus = (item) => {
+  const handleToggleStatus = async (item) => {
     const updated = sortedItems.map((it) =>
       it.id === item.id ? { ...it, status: it.status === 'Active' ? 'Inactive' : 'Active' } : it
     )
-    onSaveHelpItems?.(updated)
     const newStatus = item.status === 'Active' ? 'Inactive' : 'Active'
-    showToast?.(`Help item marked ${newStatus}`, 'info')
+    try {
+      await onSaveHelpItems?.(updated)
+      showToast?.(`Help item marked ${newStatus}`, 'info')
+    } catch (saveError) {
+      showToast?.(saveError.message || 'Unable to update help item.', 'error')
+    }
   }
 
   return (
@@ -213,7 +221,7 @@ export default function HelpItemsPage({
         <HelpItemModal
           item={editingItem}
           onClose={() => setEditingItem(null)}
-          onSave={(saved) => {
+          onSave={async (saved) => {
             const exists = sortedItems.some((it) => it.id === saved.id)
             let updated
             if (exists) {
@@ -221,9 +229,13 @@ export default function HelpItemsPage({
             } else {
               updated = [...sortedItems, saved]
             }
-            onSaveHelpItems?.(updated)
-            showToast?.(exists ? 'Help item updated' : 'Help item created', 'success')
-            setEditingItem(null)
+            try {
+              await onSaveHelpItems?.(updated)
+              showToast?.(exists ? 'Help item updated' : 'Help item created', 'success')
+              setEditingItem(null)
+            } catch (saveError) {
+              showToast?.(saveError.message || 'Unable to save help item.', 'error')
+            }
           }}
         />
       )}
@@ -235,11 +247,15 @@ export default function HelpItemsPage({
         message={adminT("Are you sure you want to remove this FAQ entry from the store knowledge base?")}
         confirmText={adminT("Delete Item")}
         danger={true}
-        onConfirm={() => {
+        onConfirm={async () => {
           const updated = sortedItems.filter((it) => it.id !== deleteConfirmId)
-          onSaveHelpItems?.(updated)
-          showToast?.('Help item deleted', 'success')
-          setDeleteConfirmId(null)
+          try {
+            await onSaveHelpItems?.(updated)
+            showToast?.('Help item deleted', 'success')
+            setDeleteConfirmId(null)
+          } catch (saveError) {
+            showToast?.(saveError.message || 'Unable to delete help item.', 'error')
+          }
         }}
         onCancel={() => setDeleteConfirmId(null)}
       />

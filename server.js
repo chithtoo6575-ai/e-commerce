@@ -19,6 +19,16 @@ fs.mkdirSync(path.dirname(databaseFile), { recursive: true })
 const shopDatabase = new DatabaseSync(databaseFile)
 shopDatabase.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;')
 shopDatabase.exec(`\n  CREATE TABLE IF NOT EXISTS shop_state (\n    id INTEGER PRIMARY KEY CHECK (id = 1),\n    revision INTEGER NOT NULL,\n    payload TEXT NOT NULL,\n    updated_at TEXT NOT NULL\n  );\n  CREATE TABLE IF NOT EXISTS schema_migrations (\n    version INTEGER PRIMARY KEY,\n    applied_at TEXT NOT NULL\n  );\n`)
+shopDatabase.exec(`
+  CREATE TABLE IF NOT EXISTS customer_addresses (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS customer_addresses_owner_idx ON customer_addresses(customer_id, created_at DESC);
+`)
 const adminFile = process.env.ADMIN_ACCOUNT_FILE ? path.resolve(process.env.ADMIN_ACCOUNT_FILE) : path.join(root, 'data', 'admin.json')
 const paymentsFile = process.env.PAYMENT_ACCOUNTS_FILE ? path.resolve(process.env.PAYMENT_ACCOUNTS_FILE) : path.join(root, 'data', 'payments.json')
 const settingsFile = process.env.SHOP_SETTINGS_FILE ? path.resolve(process.env.SHOP_SETTINGS_FILE) : path.join(root, 'data', 'settings.json')
@@ -59,15 +69,21 @@ const oauthTransactions = new Map()
 const dataRevisions = new WeakMap()
 
 function normalizeShopData(data) {
-  const base = { orders: [], products: [], customers: [], promotions: [], categories: DEFAULT_CATEGORIES, banners: DEFAULT_BANNERS, orderChats: [], stockMovements: [], guestOrderAccess: {}, activityLog: [], processedTelegramUpdates: [], telegramOrderMessages: {}, telegramOrderNotifications: {}, orderIdempotency: [], authChallenges: {}, authRateLimits: {}, supportChannels: [] }
+  const base = { orders: [], addresses: [], products: [], customers: [], promotions: [], categories: DEFAULT_CATEGORIES, subCategories: [], banners: DEFAULT_BANNERS, homeSections: [], homeLayout: [], shippingRates: [], deliveryCompanies: [], notifications: [], helpItems: [], storefrontSettingsInitialized: false, notificationReads: {}, orderChats: [], stockMovements: [], guestOrderAccess: {}, activityLog: [], processedTelegramUpdates: [], telegramOrderMessages: {}, telegramOrderNotifications: {}, orderIdempotency: [], authChallenges: {}, authRateLimits: {}, supportChannels: [] }
   const safeData = { ...base, ...data }
-  for (const key of ['orders', 'products', 'customers', 'promotions']) {
+  for (const key of ['orders', 'addresses', 'products', 'customers', 'promotions']) {
     if (!Array.isArray(safeData[key])) throw new Error(`Shop data field "${key}" must be an array.`)
   }
   safeData.categories = Array.isArray(safeData.categories) ? safeData.categories : base.categories
+  safeData.subCategories = Array.isArray(safeData.subCategories) ? safeData.subCategories : []
   safeData.banners = Array.isArray(safeData.banners) ? safeData.banners : base.banners
   safeData.orderChats = Array.isArray(safeData.orderChats) ? safeData.orderChats : []
   safeData.stockMovements = Array.isArray(safeData.stockMovements) ? safeData.stockMovements : []
+  for (const key of ['homeSections', 'homeLayout', 'shippingRates', 'deliveryCompanies', 'notifications', 'helpItems']) {
+    safeData[key] = Array.isArray(safeData[key]) ? safeData[key] : []
+  }
+  safeData.storefrontSettingsInitialized = safeData.storefrontSettingsInitialized === true
+  safeData.notificationReads = safeData.notificationReads && typeof safeData.notificationReads === 'object' && !Array.isArray(safeData.notificationReads) ? safeData.notificationReads : {}
   safeData.guestOrderAccess = safeData.guestOrderAccess && typeof safeData.guestOrderAccess === 'object' && !Array.isArray(safeData.guestOrderAccess) ? safeData.guestOrderAccess : {}
   safeData.activityLog = Array.isArray(safeData.activityLog) ? safeData.activityLog.slice(0, 100) : []
   safeData.processedTelegramUpdates = Array.isArray(safeData.processedTelegramUpdates) ? safeData.processedTelegramUpdates.slice(-1000) : []
@@ -77,6 +93,29 @@ function normalizeShopData(data) {
   safeData.authChallenges = safeData.authChallenges && typeof safeData.authChallenges === 'object' && !Array.isArray(safeData.authChallenges) ? safeData.authChallenges : {}
   safeData.authRateLimits = safeData.authRateLimits && typeof safeData.authRateLimits === 'object' && !Array.isArray(safeData.authRateLimits) ? safeData.authRateLimits : {}
   safeData.supportChannels = Array.isArray(safeData.supportChannels) ? safeData.supportChannels : []
+  safeData.subCategories = safeData.subCategories.map((subCategory) => {
+    const parent = safeData.categories.find((category) =>
+      category.id === subCategory.parentCategoryId || category.name === subCategory.parentCategoryId
+    )
+    return parent ? { ...subCategory, parentCategoryId: parent.id } : subCategory
+  })
+  safeData.products = safeData.products.map((product) => {
+    const category = safeData.categories.find((item) =>
+      item.id === product.categoryId ||
+      item.name === product.categoryId ||
+      item.id === product.category ||
+      item.name === product.category
+    )
+    const subCategory = category && safeData.subCategories.find((item) =>
+      (item.id === product.subCategoryId || item.name === product.subCategory) &&
+      item.parentCategoryId === category.id
+    )
+    return {
+      ...product,
+      ...(category ? { categoryId: category.id } : {}),
+      ...(subCategory ? { subCategoryId: subCategory.id, subCategory: subCategory.name } : {})
+    }
+  })
   const normalizePaymentStatus = (value) => value === 'Pending Verification' ? 'Pending' : value === 'Verified' ? 'Confirmed' : value
   safeData.orders = safeData.orders.map((order) => {
     if (!order || typeof order !== 'object') return order
@@ -117,6 +156,45 @@ function initializeShopDatabase() {
 }
 initializeShopDatabase()
 
+function migrateCustomerAddresses() {
+  const migration = shopDatabase.prepare('SELECT version FROM schema_migrations WHERE version = 2').get()
+  if (migration) return
+  const state = shopDatabase.prepare('SELECT revision, payload FROM shop_state WHERE id = 1').get()
+  if (!state) throw new Error('Persistent shop database is missing its state record.')
+  let data
+  try {
+    data = JSON.parse(state.payload)
+  } catch (migrationError) {
+    throw new Error(`Could not migrate saved addresses. Persistent shop data could not be read. ${migrationError.message}`)
+  }
+  const addresses = Array.isArray(data.addresses) ? data.addresses : []
+  delete data.addresses
+  const insertAddress = shopDatabase.prepare('INSERT OR IGNORE INTO customer_addresses (id, customer_id, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+  shopDatabase.exec('BEGIN IMMEDIATE')
+  try {
+    const migratedAt = new Date().toISOString()
+    for (const address of addresses) {
+      if (!address || typeof address !== 'object' || Array.isArray(address)) throw new Error('An existing saved address is invalid.')
+      const id = typeof address.id === 'string' && address.id ? address.id : crypto.randomUUID()
+      const customerId = typeof address.customerId === 'string' ? address.customerId : typeof address.userId === 'string' ? address.userId : ''
+      if (!customerId) throw new Error(`Existing saved address "${id}" has no customer ID.`)
+      const createdAt = typeof address.createdAt === 'string' ? address.createdAt : migratedAt
+      const updatedAt = typeof address.updatedAt === 'string' ? address.updatedAt : migratedAt
+      const migrated = { ...address, id, customerId, createdAt, updatedAt }
+      insertAddress.run(id, customerId, JSON.stringify(migrated), createdAt, updatedAt)
+    }
+    const result = shopDatabase.prepare('UPDATE shop_state SET payload = ?, revision = revision + 1, updated_at = ? WHERE id = 1 AND revision = ?')
+      .run(JSON.stringify(data), migratedAt, Number(state.revision))
+    if (Number(result.changes) !== 1) throw new Error('Shop data changed while saved addresses were being migrated.')
+    shopDatabase.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)').run(migratedAt)
+    shopDatabase.exec('COMMIT')
+  } catch (migrationError) {
+    shopDatabase.exec('ROLLBACK')
+    throw new Error(`Could not migrate saved addresses. ${migrationError.message}`)
+  }
+}
+migrateCustomerAddresses()
+
 function readData() {
   const row = shopDatabase.prepare('SELECT revision, payload FROM shop_state WHERE id = 1').get()
   if (!row) throw new Error('Persistent shop database is missing its state record.')
@@ -126,6 +204,12 @@ function readData() {
   } catch (readError) {
     throw new Error(`Persistent shop database data could not be read. ${readError.message}`)
   }
+  try {
+    data.addresses = shopDatabase.prepare('SELECT payload FROM customer_addresses ORDER BY created_at DESC, rowid DESC').all()
+      .map((address) => JSON.parse(address.payload))
+  } catch (readError) {
+    throw new Error(`Saved addresses could not be read from the database. ${readError.message}`)
+  }
   dataRevisions.set(data, Number(row.revision))
   return data
 }
@@ -133,12 +217,30 @@ function writeData(data) {
   const expectedRevision = dataRevisions.get(data)
   if (!Number.isSafeInteger(expectedRevision)) throw new Error('Shop data cannot be saved without a database revision.')
   const safeData = normalizeShopData(data)
-  const result = shopDatabase.prepare('UPDATE shop_state SET payload = ?, revision = revision + 1, updated_at = ? WHERE id = 1 AND revision = ?')
-    .run(JSON.stringify(safeData), new Date().toISOString(), expectedRevision)
-  if (Number(result.changes) !== 1) {
-    const conflict = new Error('Shop data changed while this request was being processed.')
-    conflict.code = 'SHOP_DATA_CONFLICT'
-    throw conflict
+  const addresses = safeData.addresses
+  delete safeData.addresses
+  const updatedAt = new Date().toISOString()
+  shopDatabase.exec('BEGIN IMMEDIATE')
+  try {
+    const result = shopDatabase.prepare('UPDATE shop_state SET payload = ?, revision = revision + 1, updated_at = ? WHERE id = 1 AND revision = ?')
+      .run(JSON.stringify(safeData), updatedAt, expectedRevision)
+    if (Number(result.changes) !== 1) {
+      const conflict = new Error('Shop data changed while this request was being processed.')
+      conflict.code = 'SHOP_DATA_CONFLICT'
+      throw conflict
+    }
+    shopDatabase.prepare('DELETE FROM customer_addresses').run()
+    const insertAddress = shopDatabase.prepare('INSERT INTO customer_addresses (id, customer_id, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+    for (const address of addresses) {
+      if (!address || typeof address !== 'object' || Array.isArray(address) || !address.id || !address.customerId) {
+        throw new Error('Saved addresses must include a valid ID and customer ID.')
+      }
+      insertAddress.run(address.id, address.customerId, JSON.stringify(address), address.createdAt || updatedAt, address.updatedAt || updatedAt)
+    }
+    shopDatabase.exec('COMMIT')
+  } catch (writeError) {
+    shopDatabase.exec('ROLLBACK')
+    throw writeError
   }
   dataRevisions.set(data, expectedRevision + 1)
 }
@@ -199,6 +301,11 @@ function customerSession(request) {
   const session = token && sessions.get(token)
   if (session?.type !== 'customer') return null
   if (session.expiresAt <= Date.now()) { sessions.delete(token); return null }
+  const customer = readData().customers.find((item) => item.id === session.customerId)
+  if (!customer || customer.status === 'Suspended') {
+    sessions.delete(token)
+    return null
+  }
   return session
 }
 function guestOrderAccessHash(request) {
@@ -223,12 +330,13 @@ function customerSafeProfile(customer) {
       ...(customer.telegramUserId ? ['telegram'] : [])
     ],
     languagePreference: customer.languagePreference === 'my' ? 'my' : customer.languagePreference === 'en' ? 'en' : '',
-    createdAt: customer.createdAt
+    createdAt: customer.createdAt,
+    status: customer.status === 'Suspended' ? 'Suspended' : 'Active'
   }
 }
 function adminCustomerSummary(customer, orders) {
   const customerOrders = orders.filter((order) => isCustomerOrder(order, customer.id, customer))
-  return { id: customer.id, name: customer.name, phone: customer.phone, email: customer.email || '', createdAt: customer.createdAt, orderCount: customerOrders.length, totalPurchase: customerOrders.filter((order) => order.status !== 'Cancelled').reduce((total, order) => total + Number(order.total || 0), 0) }
+  return { id: customer.id, name: customer.name, phone: customer.phone, email: customer.email || '', createdAt: customer.createdAt, status: customer.status === 'Suspended' ? 'Suspended' : 'Active', orderCount: customerOrders.length, totalPurchase: customerOrders.filter((order) => order.status !== 'Cancelled').reduce((total, order) => total + Number(order.total || 0), 0) }
 }
 function productVariantOptions(product) {
   const sizes = Array.isArray(product.availableVariants?.sizes)
@@ -309,8 +417,87 @@ function customerOnly(request, response) {
   if (!session) { send(response, 401, { error: 'Customer authentication required.' }); return null }
   return session
 }
+function cleanStorefrontSettings(input) {
+  const fields = ['homeSections', 'homeLayout', 'shippingRates', 'deliveryCompanies', 'notifications', 'helpItems']
+  if (!input || typeof input !== 'object' || Array.isArray(input)) invalidAdminInput('Storefront settings must be an object.')
+  const result = {}
+  for (const field of fields) {
+    const items = input[field]
+    if (!Array.isArray(items) || items.length > 200) invalidAdminInput(`Storefront setting "${field}" must be a list of no more than 200 items.`)
+    const ids = new Set()
+    result[field] = items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) invalidAdminInput(`Every "${field}" item must be an object.`)
+      const id = String(item.id || '').trim()
+      if (!id || id.length > 120 || ids.has(id)) invalidAdminInput(`Every "${field}" item must have a unique ID.`)
+      ids.add(id)
+      const sortOrder = Number(item.sortOrder ?? 0)
+      if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) invalidAdminInput(`Every "${field}" item must have a non-negative whole-number sort order.`)
+      const status = item.status === 'Inactive' ? 'Inactive' : 'Active'
+      const enabled = item.enabled !== false
+      if (field === 'homeSections') {
+        const title = String(item.title || '').trim()
+        if (!title || title.length > 120) invalidAdminInput('Home section titles must be between 1 and 120 characters.')
+        return { ...item, id, title, subtitle: String(item.subtitle || '').trim().slice(0, 240), source: String(item.source || '').trim().slice(0, 80), displayStyle: String(item.displayStyle || 'grid').trim().slice(0, 40), enabled, sortOrder }
+      }
+      if (field === 'homeLayout') {
+        const name = String(item.name || '').trim()
+        if (!name || name.length > 120) invalidAdminInput('Home layout names must be between 1 and 120 characters.')
+        return { ...item, id, name, description: String(item.description || '').trim().slice(0, 300), enabled, sortOrder }
+      }
+      if (field === 'shippingRates') {
+        const region = String(item.region || '').trim()
+        const deliveryType = String(item.deliveryType || '').trim()
+        const fees = ['baseFee', 'freeThreshold', 'additionalFee'].map((key) => Number(item[key] ?? 0))
+        if (!region || region.length > 120 || !deliveryType || deliveryType.length > 120 || fees.some((fee) => !Number.isSafeInteger(fee) || fee < 0)) {
+          invalidAdminInput('Shipping rates require a region, delivery type, and non-negative whole-number fees.')
+        }
+        return { ...item, id, region, deliveryType, baseFee: fees[0], freeThreshold: fees[1], additionalFee: fees[2], status, sortOrder }
+      }
+      if (field === 'deliveryCompanies') {
+        const name = String(item.name || '').trim()
+        if (!name || name.length > 120) invalidAdminInput('Delivery company names must be between 1 and 120 characters.')
+        return { ...item, id, name, logo: String(item.logo || '').slice(0, 32), contact: String(item.contact || '').trim().slice(0, 120), phone: String(item.phone || '').trim().slice(0, 40), trackingUrl: String(item.trackingUrl || '').trim().slice(0, 500), description: String(item.description || '').trim().slice(0, 500), status }
+      }
+      if (field === 'notifications') {
+        const title = String(item.title || '').trim()
+        const message = String(item.message || '').trim()
+        if (!title || title.length > 160 || !message || message.length > 2000) invalidAdminInput('Notifications require a title and message within the supported lengths.')
+        const notificationStatus = ['Draft', 'Scheduled', 'Sent'].includes(item.status) ? item.status : 'Draft'
+        return { ...item, id, title, message, audience: String(item.audience || 'All Customers').trim().slice(0, 80), link: String(item.link || '').trim().slice(0, 500), status: notificationStatus, date: String(item.date || '').slice(0, 40) }
+      }
+      const question = String(item.question || '').trim()
+      const answer = String(item.answer || '').trim()
+      if (!question || question.length > 500 || !answer || answer.length > 4000) invalidAdminInput('Help items require a question and answer within the supported lengths.')
+      return { ...item, id, question, answer, category: String(item.category || 'Ordering').trim().slice(0, 80), status, sortOrder }
+    })
+  }
+  return result
+}
 function normalizePhone(value) { return String(value || '').replace(/[\s()-]/g, '') }
 function validPhone(value) { return /^(?:\+?95|0)\d{7,13}$/.test(normalizePhone(value)) }
+function customerAddressFields(body, existing = {}) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+  const fullName = String(body.fullName ?? body.name ?? existing.fullName ?? '').trim()
+  const phone = String(body.phone ?? existing.phone ?? '').trim()
+  const addressLine = String(body.addressLine ?? body.value ?? existing.addressLine ?? existing.value ?? '').trim()
+  const region = String(body.region ?? body.city ?? existing.region ?? '').trim()
+  const township = String(body.township ?? existing.township ?? '').trim()
+  const mapLocation = String(body.mapLocation ?? existing.mapLocation ?? '').trim()
+  const label = String(body.label ?? existing.label ?? 'Home').trim()
+  if (!fullName || fullName.length > 120 || !validPhone(phone) || !addressLine || addressLine.length > 1000 ||
+    region.length > 120 || township.length > 120 || mapLocation.length > 200 || !label || label.length > 40) return null
+  return {
+    label,
+    fullName,
+    phone,
+    region,
+    township,
+    addressLine,
+    mapLocation,
+    value: [addressLine, township, region].filter(Boolean).join(', '),
+    default: Boolean(body.default ?? body.isDefault ?? existing.default)
+  }
+}
 function phoneE164(value) {
   const phone = normalizePhone(value)
   if (phone.startsWith('+95')) return phone
@@ -575,6 +762,7 @@ function isCustomerOrder(order, customerId, customer) {
 }
 function customerCookieHeader(token, maxAge = 28800) { return `${customerCookie}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie}` }
 function createCustomerSession(customer, maxAge = 28800) {
+  if (customer.status === 'Suspended') throw Object.assign(new Error('This customer account is suspended. Contact the shop for assistance.'), { status: 403 })
   const token = crypto.randomBytes(32).toString('hex')
   sessions.set(token, { type: 'customer', customerId: customer.id, createdAt: Date.now(), expiresAt: Date.now() + maxAge * 1000 })
   return token
@@ -698,6 +886,8 @@ function cleanProduct(input, existing = {}) {
     ? product.salePrice
     : (product.discountPrice === '' || product.discountPrice == null ? null : Number(product.discountPrice))
   product.costPrice = Number(product.costPrice || 0)
+  product.weightKg = Number(product.weightKg ?? 0)
+  if (!Number.isFinite(product.weightKg) || product.weightKg < 0 || product.weightKg > 100_000) invalidAdminInput('Product shipping weight must be a non-negative number of kilograms.')
   product.stock = Number(product.stock)
   product.lowStockThreshold = Number(product.lowStockThreshold || 5)
 
@@ -746,8 +936,32 @@ function cleanProduct(input, existing = {}) {
   product.createdAt = existing.createdAt || product.createdAt || new Date().toISOString()
   product.updatedAt = new Date().toISOString()
 
-  const selectedCategory = categories.find((category) => category.id === product.category || category.name === product.category)
+  const selectedCategory = categories.find((category) => category.id === product.category || category.name === product.category || category.id === product.categoryId)
   const mayKeepInactiveCategory = existing.id != null && (existing.category === product.category || existing.category === selectedCategory?.id || existing.category === selectedCategory?.name)
+  const selectedSubCategory = currentShopData.subCategories.find((subCategory) =>
+    (subCategory.id === product.subCategory || subCategory.name === product.subCategory || subCategory.id === product.subCategoryId) &&
+    subCategory.status !== 'Inactive' &&
+    (subCategory.parentCategoryId === selectedCategory?.id || subCategory.parentCategoryId === selectedCategory?.name)
+  )
+  const existingParentMatches = selectedCategory && (
+    existing.categoryId === selectedCategory.id ||
+    existing.category === selectedCategory.id ||
+    existing.category === selectedCategory.name
+  )
+  if (selectedSubCategory) {
+    product.subCategory = selectedSubCategory.name
+    product.subCategoryId = selectedSubCategory.id
+  } else if (product.subCategory && existing.id != null && existingParentMatches && product.subCategory === existing.subCategory) {
+    product.subCategoryId = existing.subCategoryId || ''
+  } else if (product.subCategory) {
+    invalidAdminInput('Choose a subcategory that belongs to the selected category.')
+  } else {
+    delete product.subCategoryId
+  }
+  if (selectedCategory) {
+    product.category = selectedCategory.name
+    product.categoryId = selectedCategory.id
+  }
   if (!product.nameEn || !selectedCategory || (selectedCategory.enabled === false && !mayKeepInactiveCategory) || !Number.isFinite(product.price) || product.price < 0 || (product.discountPrice != null && (!Number.isFinite(product.discountPrice) || product.discountPrice < 0 || product.discountPrice > product.price)) || !Number.isInteger(product.stock) || product.stock < 0 || (!product.images.length && !product.image)) {
     throw new Error('Product requires names, an active category, valid Ks prices, stock, and at least one image.')
   }
@@ -758,10 +972,49 @@ function cleanCategory(input, existing = {}) {
   category.name = String(category.name || '').trim()
   category.storefrontCategory = String(category.storefrontCategory || '')
   category.icon = String(category.icon || '').trim().slice(0, 8)
+  category.sortOrder = Number(category.sortOrder ?? 0)
   category.enabled = category.enabled !== false
-  if (!category.name || category.name.length > 60 || !STOREFRONT_CATEGORIES.includes(category.storefrontCategory)) throw new Error('Category requires a name of 1 to 60 characters and a valid storefront group.')
-  if (category.image && (typeof category.image !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(category.image) || category.image.length > 7_000_000)) throw new Error('Category image must be a JPG, PNG, or WebP image no larger than 5 MB.')
+  if (!category.name || category.name.length > 60 || !STOREFRONT_CATEGORIES.includes(category.storefrontCategory) || !Number.isSafeInteger(category.sortOrder) || category.sortOrder < 0) invalidAdminInput('Category requires a name of 1 to 60 characters, a valid storefront group, and a non-negative whole-number sort order.')
+  if (category.image && !validStoreImage(category.image)) invalidAdminInput('Category image must be an uploaded image or a valid HTTP(S) URL.')
   return category
+}
+function validStoreImage(value) {
+  if (typeof value !== 'string') return false
+  if (/^data:image\/(jpeg|png|webp);base64,/i.test(value) && value.length <= 7_000_000) return true
+  if (/^\/uploads\/[a-zA-Z0-9._-]+$/.test(value)) return true
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol)
+  } catch {
+    return false
+  }
+}
+function cleanSubCategory(input, existing = {}, categories = [], subCategories = []) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) invalidAdminInput('Subcategory data must be an object.')
+  const subCategory = { ...existing, ...input, id: existing.id || crypto.randomUUID() }
+  subCategory.name = String(subCategory.name || '').trim()
+  const parentValue = String(subCategory.parentCategoryId || '').trim()
+  const parent = categories.find((category) => category.id === parentValue || category.name === parentValue)
+  if (!parent || !subCategory.name || subCategory.name.length > 100) invalidAdminInput('Subcategory requires a valid parent category and a name of 1 to 100 characters.')
+  subCategory.parentCategoryId = parent.id
+  subCategory.sortOrder = Number(subCategory.sortOrder ?? 0)
+  subCategory.status = subCategory.status === 'Inactive' ? 'Inactive' : 'Active'
+  subCategory.enabled = subCategory.status === 'Active'
+  if (!Number.isSafeInteger(subCategory.sortOrder) || subCategory.sortOrder < 0) invalidAdminInput('Subcategory sort order must be a non-negative whole number.')
+  if (subCategory.image && !validStoreImage(subCategory.image)) invalidAdminInput('Subcategory image must be a valid HTTP(S) URL or uploaded image.')
+  const duplicate = subCategories.some((item) =>
+    item.id !== subCategory.id &&
+    item.parentCategoryId === parent.id &&
+    item.name.toLocaleLowerCase() === subCategory.name.toLocaleLowerCase()
+  )
+  if (duplicate) throw Object.assign(new Error('A subcategory with that name already exists under this category.'), { status: 409 })
+  delete subCategory.productCount
+  return subCategory
+}
+function productBelongsToCategory(product, categoryId, categories) {
+  const parent = categories.find((category) => String(category.id) === String(categoryId))
+  return String(product.categoryId || '') === String(categoryId) ||
+    String(product.category || '') === String(categoryId) ||
+    Boolean(parent && product.category === parent.name)
 }
 const SUPPORT_CHANNEL_NAMES = ['Facebook', 'Telegram', 'Viber', 'Phone', 'Email', 'Instagram', 'WhatsApp', 'TikTok']
 const SUPPORT_CHANNEL_PROTOCOLS = ['http:', 'https:', 'viber:', 'tg:', 'tel:', 'mailto:']
@@ -1405,6 +1658,7 @@ const server = http.createServer(async (request, response) => {
       const customer = data.customers.find((item) => item.id === session.customerId)
       if (!customer) return send(response, 404, { error: 'Customer account was not found.' })
       data.customers = data.customers.filter((item) => item.id !== session.customerId)
+      data.addresses = data.addresses.filter((item) => item.customerId !== session.customerId)
       data.orders = data.orders.map((order) => order.customer?.userId === session.customerId
         ? { ...order, customer: { ...order.customer, userId: null, name: 'Deleted customer', phone: '', address: '' } }
         : order)
@@ -1772,7 +2026,7 @@ const server = http.createServer(async (request, response) => {
         ? data.customers.find((item) => item.email && normalizeEmail(item.email) === email && item.passwordHash)
         : data.customers.find((item) =>
             item.phone && phoneE164(item.phone) === phone &&
-            (item.phoneVerified || item.authProvider === 'phone-password')
+            item.passwordHash
           )
       const password = typeof body.password === 'string' && body.password.length <= 256 ? body.password : ''
       const actual = customer?.salt && customer?.passwordHash ? Buffer.from(hashPassword(password, customer.salt), 'hex') : Buffer.alloc(0)
@@ -2042,6 +2296,91 @@ const server = http.createServer(async (request, response) => {
       for (const [id, item] of Object.entries(data.authChallenges)) if (item.customerId === customer.id) delete data.authChallenges[id]
       data.customers = data.customers.map((item) => item.id === customer.id ? customer : item); writeData(data)
       return send(response, 200, { ok: true })
+    }
+    if (url.pathname === '/api/customer/addresses') {
+      const session = customerOnly(request, response); if (!session) return
+      const data = readData()
+      if (request.method === 'GET') {
+        return send(response, 200, { addresses: data.addresses.filter((address) => address.customerId === session.customerId) })
+      }
+      if (request.method === 'POST') {
+        const body = await readBody(request)
+        const fields = customerAddressFields(body)
+        if (!fields) return send(response, 400, { error: 'Enter a valid name, phone number, and delivery address.' })
+        const createdAt = new Date().toISOString()
+        const address = {
+          id: crypto.randomUUID(),
+          customerId: session.customerId,
+          ...fields,
+          default: fields.default || !data.addresses.some((item) => item.customerId === session.customerId),
+          createdAt,
+          updatedAt: createdAt
+        }
+        if (address.default) data.addresses = data.addresses.map((item) => item.customerId === session.customerId ? { ...item, default: false } : item)
+        data.addresses = [address, ...data.addresses]
+        writeData(data)
+        return send(response, 201, { address })
+      }
+      return send(response, 405, { error: 'Method not allowed.' })
+    }
+    if (url.pathname === '/api/customer/addresses/import') {
+      const session = customerOnly(request, response); if (!session) return
+      if (request.method !== 'POST') return send(response, 405, { error: 'Method not allowed.' })
+      const body = await readBody(request)
+      if (!body || typeof body !== 'object' || Array.isArray(body) || !Array.isArray(body.addresses) || body.addresses.length > 100) {
+        return send(response, 400, { error: 'Legacy addresses must be a list of saved address records.' })
+      }
+      const data = readData()
+      const existing = data.addresses.filter((address) => address.customerId === session.customerId)
+      if (existing.length) return send(response, 200, { addresses: existing, imported: false })
+      const fields = body.addresses.map((item) => customerAddressFields(item))
+      if (fields.some((item) => !item)) return send(response, 400, { error: 'A saved address is invalid and could not be imported.' })
+      const defaultIndex = fields.findIndex((address) => address.default)
+      const importedAt = new Date().toISOString()
+      const addresses = fields.map((address, index) => ({
+        ...address,
+        id: crypto.randomUUID(),
+        customerId: session.customerId,
+        default: index === (defaultIndex >= 0 ? defaultIndex : 0),
+        createdAt: typeof body.addresses[index].createdAt === 'string' ? body.addresses[index].createdAt : importedAt,
+        updatedAt: importedAt
+      }))
+      data.addresses = [...addresses, ...data.addresses]
+      writeData(data)
+      return send(response, 200, { addresses, imported: true })
+    }
+    if (url.pathname.startsWith('/api/customer/addresses/')) {
+      const session = customerOnly(request, response); if (!session) return
+      const addressId = decodeURIComponent(url.pathname.slice('/api/customer/addresses/'.length))
+      const data = readData()
+      const existing = data.addresses.find((address) => address.id === addressId && address.customerId === session.customerId)
+      if (!existing) return send(response, 404, { error: 'Saved address not found.' })
+      if (request.method === 'PATCH') {
+        const body = await readBody(request)
+        const fields = customerAddressFields(body, existing)
+        if (!fields) return send(response, 400, { error: 'Enter a valid name, phone number, and delivery address.' })
+        const address = {
+          ...existing,
+          ...fields,
+          updatedAt: new Date().toISOString()
+        }
+        data.addresses = data.addresses.map((item) => {
+          if (item.id === addressId) return address
+          return address.default && item.customerId === session.customerId ? { ...item, default: false } : item
+        })
+        writeData(data)
+        return send(response, 200, { address })
+      }
+      if (request.method === 'DELETE') {
+        data.addresses = data.addresses.filter((item) => item.id !== addressId)
+        if (existing.default) {
+          const nextAddress = data.addresses.find((item) => item.customerId === session.customerId)
+          if (nextAddress) nextAddress.default = true
+        }
+        writeData(data)
+        return send(response, 200, { ok: true })
+      }
+      return send(response, 405, { error: 'Method not allowed.' })
     }
     if (request.method === 'GET' && url.pathname === '/api/customer/orders') {
       const session = customerSession(request)
@@ -2441,7 +2780,37 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname.startsWith('/api/admin/')) {
       if (!adminOnly(request, response)) return
       const data = readData()
-      if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [] })
+      if (url.pathname === '/api/admin/storefront-settings') {
+        if (request.method === 'GET') {
+          const { storefrontSettingsInitialized, ...settings } = data
+          return send(response, 200, { settings, initialized: storefrontSettingsInitialized })
+        }
+        if (request.method === 'PUT') {
+          const settings = cleanStorefrontSettings(await readBody(request))
+          Object.assign(data, settings, { storefrontSettingsInitialized: true })
+          auditAdminAction(data, request, 'Updated storefront, delivery, notification, and help settings.')
+          writeData(data)
+          return send(response, 200, { settings, initialized: true })
+        }
+      }
+      const customerStatusMatch = url.pathname.match(/^\/api\/admin\/customers\/([^/]+)\/status$/)
+      if (request.method === 'PATCH' && customerStatusMatch) {
+        const customerId = decodeURIComponent(customerStatusMatch[1])
+        const body = await readBody(request)
+        if (body.status !== 'Active' && body.status !== 'Suspended') return send(response, 400, { error: 'Customer status must be Active or Suspended.' })
+        const customer = data.customers.find((item) => String(item.id) === customerId)
+        if (!customer) return send(response, 404, { error: 'Customer account not found.' })
+        customer.status = body.status
+        if (body.status === 'Suspended') {
+          for (const [token, session] of sessions) {
+            if (session.type === 'customer' && session.customerId === customer.id) sessions.delete(token)
+          }
+        }
+        auditAdminAction(data, request, `${body.status === 'Suspended' ? 'Suspended' : 'Reactivated'} customer account: ${customer.name || customer.id}.`)
+        writeData(data)
+        return send(response, 200, { customer: adminCustomerSummary(customer, data.orders) })
+      }
+      if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, subCategories: data.subCategories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [] })
       if (request.method === 'POST' && url.pathname === '/api/admin/categories') {
         const category = cleanCategory(await readBody(request))
         if (data.categories.some((item) => item.name.toLowerCase() === category.name.toLowerCase())) return send(response, 409, { error: 'A category with that name already exists.' })
@@ -2457,13 +2826,61 @@ const server = http.createServer(async (request, response) => {
           const category = cleanCategory(await readBody(request), current)
           if (data.categories.some((item) => item.id !== id && item.name.toLowerCase() === category.name.toLowerCase())) return send(response, 409, { error: 'A category with that name already exists.' })
           data.categories = data.categories.map((item) => item.id === id ? category : item)
+          data.products = data.products.map((product) =>
+            product.categoryId === id || product.category === id || product.category === current.name
+              ? { ...product, category: category.name, categoryId: id }
+              : product
+          )
           auditAdminAction(data, request, `Updated category: ${category.name}.`); writeData(data)
           return send(response, 200, { category })
         }
         if (request.method === 'DELETE') {
-          if (data.products.some((product) => product.category === id)) return send(response, 409, { error: 'Move or delete products in this category before deleting it.' })
+          if (data.products.some((product) => product.categoryId === id || product.category === id || product.category === current.name)) return send(response, 409, { error: 'Move or delete products in this category before deleting it.' })
+          if (data.subCategories.some((subCategory) => subCategory.parentCategoryId === id || subCategory.parentCategoryId === current.name)) return send(response, 409, { error: 'Move or delete subcategories in this category before deleting it.' })
           data.categories = data.categories.filter((category) => category.id !== id)
           auditAdminAction(data, request, `Deleted category: ${current.name}.`); writeData(data)
+          return send(response, 200, { ok: true })
+        }
+      }
+      if (request.method === 'POST' && url.pathname === '/api/admin/sub-categories') {
+        const subCategory = cleanSubCategory(await readBody(request), {}, data.categories, data.subCategories)
+        data.subCategories = [...data.subCategories, subCategory]
+        auditAdminAction(data, request, `Added subcategory: ${subCategory.name}.`)
+        writeData(data)
+        return send(response, 201, { subCategory })
+      }
+      if (url.pathname.startsWith('/api/admin/sub-categories/')) {
+        const id = decodeURIComponent(url.pathname.replace(/^\/api\/admin\/sub-categories\//, '').replace(/\/$/, ''))
+        const current = data.subCategories.find((item) => String(item.id) === id)
+        if (!current) return send(response, 404, { error: 'Subcategory not found.' })
+        if (request.method === 'PATCH') {
+          const subCategory = cleanSubCategory(await readBody(request), current, data.categories, data.subCategories)
+          const linkedProducts = data.products.filter((product) =>
+            product.subCategoryId === id ||
+            (product.subCategory === current.name && productBelongsToCategory(product, current.parentCategoryId, data.categories))
+          )
+          if (linkedProducts.length && subCategory.parentCategoryId !== current.parentCategoryId) {
+            return send(response, 409, { error: 'Move products to another subcategory before changing this subcategory’s parent.' })
+          }
+          data.subCategories = data.subCategories.map((item) => item.id === id ? subCategory : item)
+          data.products = data.products.map((product) =>
+            product.subCategoryId === id ||
+            (product.subCategory === current.name && productBelongsToCategory(product, current.parentCategoryId, data.categories))
+              ? { ...product, subCategory: subCategory.name, subCategoryId: id }
+              : product
+          )
+          auditAdminAction(data, request, `Updated subcategory: ${subCategory.name}.`)
+          writeData(data)
+          return send(response, 200, { subCategory })
+        }
+        if (request.method === 'DELETE') {
+          if (data.products.some((product) =>
+            product.subCategoryId === id ||
+            (product.subCategory === current.name && productBelongsToCategory(product, current.parentCategoryId, data.categories))
+          )) return send(response, 409, { error: 'Move products to another subcategory before deleting it.' })
+          data.subCategories = data.subCategories.filter((item) => item.id !== id)
+          auditAdminAction(data, request, `Deleted subcategory: ${current.name}.`)
+          writeData(data)
           return send(response, 200, { ok: true })
         }
       }
@@ -2590,7 +3007,17 @@ const server = http.createServer(async (request, response) => {
       }
       return send(response, 404, { error: 'Admin endpoint not found.' })
     }
-    if (request.method === 'GET' && url.pathname === '/api/categories') return send(response, 200, { categories: readData().categories.filter((category) => category.enabled !== false) })
+    if (request.method === 'GET' && url.pathname === '/api/categories') {
+      const data = readData()
+      const categories = data.categories
+        .filter((category) => category.enabled !== false)
+        .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+      const activeCategoryIds = new Set(categories.map((category) => String(category.id)))
+      const subCategories = data.subCategories
+        .filter((subCategory) => subCategory.status !== 'Inactive' && activeCategoryIds.has(String(subCategory.parentCategoryId)))
+        .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+      return send(response, 200, { categories, subCategories })
+    }
     if (request.method === 'GET' && url.pathname === '/api/banners') {
       const data = readData()
       const today = new Date().toISOString().slice(0, 10)
@@ -2599,10 +3026,50 @@ const server = http.createServer(async (request, response) => {
         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
       return send(response, 200, { banners })
     }
+    if (request.method === 'GET' && url.pathname === '/api/storefront-settings') {
+      const data = readData()
+      const now = Date.now()
+      const notifications = data.notifications
+        .filter((notification) => notification.status === 'Sent' || (
+          notification.status === 'Scheduled' &&
+          Number.isFinite(Date.parse(notification.date)) &&
+          Date.parse(notification.date) <= now
+        ))
+        .sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0))
+      return send(response, 200, {
+        initialized: data.storefrontSettingsInitialized,
+        homeSections: data.homeSections.filter((section) => section.enabled !== false).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
+        homeLayout: data.homeLayout.filter((block) => block.enabled !== false).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
+        shippingRates: data.shippingRates.filter((rate) => rate.status === 'Active').sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
+        deliveryCompanies: data.deliveryCompanies.filter((company) => company.status === 'Active'),
+        notifications,
+        helpItems: data.helpItems.filter((item) => item.status === 'Active').sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+      })
+    }
     if (request.method === 'GET' && url.pathname === '/api/products') {
       const data = readData()
-      const categories = new Map(data.categories.map((category) => [category.id, category]))
-      const products = data.products.filter((product) => product.enabled !== false && categories.get(product.category)?.enabled !== false).map((product) => ({ ...product, categoryName: categories.get(product.category)?.name || product.category, storefrontCategory: categories.get(product.category)?.storefrontCategory }))
+      const categories = new Map(data.categories.flatMap((category) => [[String(category.id), category], [category.name, category]]))
+      const subCategories = new Map(data.subCategories.map((subCategory) => [String(subCategory.id), subCategory]))
+      const products = data.products
+        .map((product) => {
+          const category = categories.get(String(product.categoryId || product.category))
+          const subCategory = product.subCategoryId ? subCategories.get(String(product.subCategoryId)) : null
+          return { product, category, subCategory }
+        })
+        .filter(({ product, category, subCategory }) =>
+          product.enabled !== false &&
+          category?.enabled !== false &&
+          Boolean(category) &&
+          (!product.subCategoryId || subCategory?.status !== 'Inactive')
+        )
+        .map(({ product, category, subCategory }) => ({
+          ...product,
+          category: category.name,
+          categoryId: category.id,
+          categoryName: category.name,
+          storefrontCategory: category.storefrontCategory,
+          ...(subCategory ? { subCategory: subCategory.name } : {})
+        }))
       return send(response, 200, { products })
     }
     if (request.method === 'GET' && url.pathname === '/api/promotions') {
@@ -2649,7 +3116,18 @@ const server = http.createServer(async (request, response) => {
       const name = String(body.name || '').trim()
       const phone = normalizePhone(body.phone || '')
       if (!name || name.length > 120 || !validPhone(phone)) return send(response, 400, { error: 'Enter a valid name and phone number.' })
+      const normalizedPhone = phoneE164(phone)
+      const phoneOwner = data.customers.find((customer) =>
+        customer.id !== existing.id && customer.phone && phoneE164(customer.phone) === normalizedPhone
+      )
+      if (phoneOwner) return send(response, 409, { error: 'That phone number is already used by another customer.' })
+      const phoneChanged = phoneE164(existing.phone) !== normalizedPhone
       const customer = { ...existing, name, phone }
+      if (phoneChanged) {
+        customer.phoneVerified = false
+        delete customer.phoneVerifiedAt
+        if (customer.authProvider === 'phone-password') customer.authProvider = 'password'
+      }
       data.customers = [customer, ...data.customers.filter((item) => item.id !== customer.id)]; writeData(data)
       return send(response, 200, { customer: customerSafeProfile(customer) })
     }
@@ -2750,9 +3228,23 @@ const server = http.createServer(async (request, response) => {
         items.push({ id: product.id, productId: product.id, sku: product.sku || '', name: product.nameEn || product.name, quantity, price, lineTotal: price * quantity, image: product.image || product.images?.[0] || '', variants })
       }
 
-      const deliveryMethodId = requestedOrder.deliveryMethod === 'cargate' ? 'cargate' : requestedOrder.deliveryMethod === 'standard' ? 'standard' : ''
-      if (!deliveryMethodId) return send(response, 400, { error: 'Select a valid delivery method.' })
-      const deliveryFee = deliveryMethodId === 'cargate' ? Math.max(0, Number(readSettings().carGatePickupFee) || 0) : 0
+      const deliveryMethodId = String(requestedOrder.deliveryMethod || '')
+      const selectedShippingRate = data.shippingRates.find((rate) => rate.id === deliveryMethodId && rate.status === 'Active')
+      const hasActiveShippingRates = data.shippingRates.some((rate) => rate.status === 'Active')
+      const isLegacyDeliveryMethod = deliveryMethodId === 'cargate' || (!hasActiveShippingRates && deliveryMethodId === 'standard')
+      if (!selectedShippingRate && !isLegacyDeliveryMethod) return send(response, 400, { error: 'Select a valid delivery method.' })
+      const isFreeShipping = selectedShippingRate && Number(selectedShippingRate.freeThreshold) > 0 && subtotal >= Number(selectedShippingRate.freeThreshold)
+      const shippingWeightKg = items.reduce((totalWeight, item) => {
+        const product = data.products.find((candidate) => String(candidate.id) === String(item.productId))
+        return totalWeight + Math.max(0, Number(product?.weightKg) || 0) * item.quantity
+      }, 0)
+      const deliveryFee = selectedShippingRate
+        ? isFreeShipping ? 0 : Math.max(0, Number(selectedShippingRate.baseFee) || 0) + Math.ceil(Math.max(0, Number(selectedShippingRate.additionalFee) || 0) * shippingWeightKg)
+        : deliveryMethodId === 'cargate' ? Math.max(0, Number(readSettings().carGatePickupFee) || 0) : 0
+      if (!Number.isSafeInteger(deliveryFee)) return send(response, 400, { error: 'The selected shipping rate exceeds the supported order amount.' })
+      const deliveryMethodLabel = selectedShippingRate
+        ? `${selectedShippingRate.region} · ${selectedShippingRate.deliveryType}`
+        : deliveryMethodId === 'cargate' ? 'Car Gate Pickup' : 'Standard Delivery'
       const couponCode = String(requestedOrder.couponCode || '').trim().toUpperCase()
       const promotion = couponCode ? data.promotions.find((item) => item.enabled && String(item.code || item.name).trim().toUpperCase() === couponCode) : null
       if (couponCode && !promotion) return send(response, 400, { error: 'That promotion is no longer active.' })
@@ -2796,7 +3288,8 @@ const server = http.createServer(async (request, response) => {
         discount,
         couponCode: promotion ? couponCode : '',
         promotion: promotion ? { code: couponCode, name: promotion.name, type: promotion.type, amount: promotion.amount } : null,
-        deliveryMethod: deliveryMethodId,
+        deliveryMethod: deliveryMethodLabel,
+        deliveryMethodId,
         total,
         paymentMethod: paymentAccount.name,
         paymentMethodId: paymentAccount.id,

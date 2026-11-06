@@ -107,6 +107,7 @@ function getOrderWorkflowStatusLabel(status) {
 
 export default function OrdersPage({
   orders = [],
+  deliveryCompanies = [],
   onUpdateOrder,
   onRefreshOrders,
   selectedOrderFromNav = null,
@@ -369,6 +370,7 @@ export default function OrdersPage({
         <OrderDetailDrawer
           order={selectedOrder}
           orders={orders}
+          deliveryCompanies={deliveryCompanies}
           onClose={() => setSelectedOrder(null)}
           onStatusClick={(newStatus, actionLabel) => {
             setConfirmStatusChange({ id: selectedOrder.id, newStatus, actionLabel })
@@ -500,6 +502,7 @@ export function OrderItemsDetailTable({
 export function OrderDetailDrawer({
   order,
   orders = [],
+  deliveryCompanies = [],
   onClose,
   onStatusClick,
   onVerifyPayment,
@@ -833,7 +836,13 @@ export function OrderDetailDrawer({
             <h5>{adminT("Delivery & Tracking")}</h5>
             <p className="text-secondary text-sm">Method: {order.deliveryMethod || 'Not specified'} · Shipping status: {order.shippingStatus || 'Preparing'}</p>
             <div className="form-grid-2">
-              <label className="form-group">{adminT("Delivery company")}<input value={deliveryCompany} onChange={(event) => setDeliveryCompany(event.target.value)} maxLength={120} /></label>
+              <label className="form-group">{adminT("Delivery company")}
+                <select value={deliveryCompany} onChange={(event) => setDeliveryCompany(event.target.value)}>
+                  <option value="">{adminT('Select a delivery company')}</option>
+                  {deliveryCompany && !deliveryCompanies.some((company) => company.status === 'Active' && company.name === deliveryCompany) && <option value={deliveryCompany}>{deliveryCompany} ({adminT('Previously selected')})</option>}
+                  {deliveryCompanies.filter((company) => company.status === 'Active').map((company) => <option key={company.id} value={company.name}>{company.name}</option>)}
+                </select>
+              </label>
               <label className="form-group">{adminT("Tracking number")}<input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} maxLength={100} /></label>
             </div>
             <button

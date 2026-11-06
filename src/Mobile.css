@@ -155,6 +155,7 @@
   min-height: 100dvh;
   width: 100%;
   max-width: 430px;
+  margin-inline: auto;
   overflow-x: hidden;
   padding-bottom: calc(76px + env(safe-area-inset-bottom, 16px));
   position: relative;
@@ -497,6 +498,7 @@
 .mob-banner-track {
   display: flex;
   gap: 0;
+  width: 100%;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
@@ -522,11 +524,17 @@
   box-shadow: var(--mob-shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.06));
 }
 
+.mob-banner-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .mob-banner-slide img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
 }
 
@@ -3292,12 +3300,13 @@ html:lang(my) .buyer-auth-screen {
 
 @media (max-width: 360px) {
   .mob-header-inner {
-    grid-template-columns: 40px minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) 44px;
     gap: .4rem;
   }
 
   .mob-logo {
-    width: 40px;
+    width: auto;
+    min-width: 0;
   }
 
   .mob-header-cart {
