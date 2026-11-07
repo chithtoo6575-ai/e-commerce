@@ -1359,36 +1359,7 @@ export default function MobileApp({
          -------------------------------------------------------------------- */}
       {currentTab === 'home' && !searchQuery.trim() && selectedMobileCategory === 'All' && (
         <div className="mob-home-layout">
-          <section className="mob-home-categories mob-home-layout-categories" aria-labelledby="mob-home-categories-title">
-            <div className="mob-section-head">
-              <div>
-                <h3 id="mob-home-categories-title" className="mob-section-title">{tr('Shop by Category')}</h3>
-                <p className="mob-section-subtitle">{tr('Find the right appliance for your home')}</p>
-              </div>
-              <button className="mob-section-see-all" onClick={() => { setSelectedMobileCategory('All'); setActiveTab('categories') }}>{tr('See All')}</button>
-            </div>
-            <div className="mob-home-category-grid">
-              {Object.keys(CATEGORY_TREE || {}).map((category, index) => {
-                const image = imageForCategory(category)
-                const icon = ['◉', '⌂', '♨', '▣', '◍', '⌕', '⌁', '⌘'][index % 8]
-                return (
-                  <button
-                    className="mob-home-category-card"
-                    key={category}
-                    onClick={() => { setSelectedMobileCategory(category); setSelectedCategory?.(category); setActiveTab('categories') }}
-                  >
-                    <span className="mob-home-category-icon" aria-hidden="true">{icon}</span>
-                    <span>{tr(category)}</span>
-                    <img src={image} alt="" loading="lazy" />
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-          {products.some((product) => product.demoData) && (
-            <p className="mob-demo-note mob-home-layout-demo" role="note">{tr('Demo prices and stock')}</p>
-          )}
-          {homeItems.map((item) => item.kind === 'banner' ? (
+          {homeItems.filter((item) => item.kind === 'banner').map((item) => (
             <section
               className="mob-banner-carousel mob-home-layout-banner"
               aria-label={tr('Promotions')}
@@ -1446,7 +1417,37 @@ export default function MobileApp({
                 </div>
               )}
             </section>
-          ) : (
+          ))}
+          <section className="mob-home-categories mob-home-layout-categories" aria-labelledby="mob-home-categories-title">
+            <div className="mob-section-head">
+              <div>
+                <h3 id="mob-home-categories-title" className="mob-section-title">{tr('Shop by Category')}</h3>
+                <p className="mob-section-subtitle">{tr('Find the right appliance for your home')}</p>
+              </div>
+              <button className="mob-section-see-all" onClick={() => { setSelectedMobileCategory('All'); setActiveTab('categories') }}>{tr('See All')}</button>
+            </div>
+            <div className="mob-home-category-grid">
+              {Object.keys(CATEGORY_TREE || {}).map((category, index) => {
+                const image = imageForCategory(category)
+                const icon = ['◉', '⌂', '♨', '▣', '◍', '⌕', '⌁', '⌘'][index % 8]
+                return (
+                  <button
+                    className="mob-home-category-card"
+                    key={category}
+                    onClick={() => { setSelectedMobileCategory(category); setSelectedCategory?.(category); setActiveTab('categories') }}
+                  >
+                    <span className="mob-home-category-icon" aria-hidden="true">{icon}</span>
+                    <span>{tr(category)}</span>
+                    <img src={image} alt="" loading="lazy" />
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+          {products.some((product) => product.demoData) && (
+            <p className="mob-demo-note mob-home-layout-demo" role="note">{tr('Demo prices and stock')}</p>
+          )}
+          {homeItems.filter((item) => item.kind === 'products').map((item) => (
             <section className="mob-section mob-home-layout-products" key={item.id}>
               <div className="mob-section-head">
                 <div>
