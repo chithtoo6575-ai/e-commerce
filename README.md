@@ -1,9 +1,9 @@
 # HTOO E-commerce
 Responsive React + Vite storefront for HTOO home and living products. The frontend now has a Supabase browser data adapter and a normalized PostgreSQL/RLS migration foundation. The existing legacy Node/SQLite API and admin interface are still present for compatibility; the application has not completed a full migration of checkout, admin, all account flows, Telegram, or payment integrations.
 
-## Supabase + Vercel migration (new)
+## Supabase configuration
 
-The `/api/*` routes were not provided by GitHub Pages: Pages serves static files only. The former Vite `/api` proxy was a local-development proxy to `server.js`, not a production backend. New catalog, settings, banners, promotions, support-channel reads, and basic email/password account calls are defined in `src/lib/supabase.js`; RLS limits database visibility. Missing Supabase configuration is surfaced instead of calling fictitious same-origin API routes. Remaining legacy `/api`-backed features are not production-ready.
+The `/api/*` routes are not provided by GitHub Pages: Pages serves static files only. The Vite `/api` proxy is for local development with `server.js`, not a production backend. Catalog, settings, banners, promotions, support-channel reads, and basic email/password account calls use `src/lib/supabase.js`; RLS limits database visibility. Missing Supabase configuration is surfaced instead of calling fictitious same-origin API routes. Remaining legacy `/api`-backed features are not production-ready.
 
 ### Local setup
 1. Create a Supabase project and put its project URL and publishable/anon key in `.env` (never use a service-role key in `VITE_*`). `.env.example` contains placeholders only.
@@ -15,12 +15,13 @@ The `/api/*` routes were not provided by GitHub Pages: Pages serves static files
 ### Order-processing boundary status
 A `create-order` Edge Function template and SQL transaction function are included, but the existing checkout has not yet been switched to them. The function currently rejects guest checkout and deliberately sets shipping and discount values to zero; shipping/promotion business logic must be completed in trusted database logic before launch. Review and test all SQL in staging. No payment provider is integrated; old UI payment slips/COD are not verified payment processing. Do not accept online payment until a provider webhook is verified server-side.
 
-### Deploy to Vercel
+### Deploy the migrated frontend to Vercel
+
 1. Import the repository into Vercel and set Vite framework, build command `npm run build`, output directory `dist` (also configured in `vercel.json`).
 2. Add Production and Preview environment variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable/anon only), then redeploy.
 3. Set the Vercel domain as Supabase Auth Site URL and add exact production/preview redirect URLs.
 4. Apply the migration, test RLS with anon/authenticated users, securely grant initial admin access, and deploy reviewed Edge Functions. Set Edge Function secret `ALLOWED_ORIGINS` to exact allowed origin(s). Never put service role keys in the frontend.
-5. Connect GitHub for automatic deployment and stop using GitHub Pages for production. The existing Pages workflow has not been removed.
+5. Connect GitHub for automatic deployment. The GitHub Pages workflow also deploys the static frontend, but cannot host the legacy API.
 
 ### Production gaps
 The schema/policies and Supabase adapter are local templates; no remote database has been configured. Product/admin CRUD, customer carts/orders, persistent addresses, the full account/session UI and remaining admin/payment features still have legacy API calls. Checkout isn't migrated; the SQL order function is an initial atomic-stock design and must receive staging security/integration tests. Complete these migrations and tests before taking real orders.
@@ -43,14 +44,19 @@ npm run dev:api
 
 ## Deploy the storefront to GitHub Pages
 
-The workflow in `.github/workflows/deploy.yml` builds the site with Node.js 22.13.0, matching the minimum version in `package.json`, and deploys `dist` when changes are pushed to `main`. To publish:
+The workflow in `.github/workflows/deploy.yml` builds the site with Node.js 22.13.0, matching the minimum version in `package.json`, and deploys `dist` when changes are pushed to `main` or `master`. Before publishing, add these repository secrets under **Settings → Secrets and variables → Actions**:
+
+- `VITE_SUPABASE_URL`: the Supabase project URL.
+- `VITE_SUPABASE_ANON_KEY`: the Supabase publishable/anon key only. This value is embedded in the public frontend bundle; never use a service-role key.
+
+The workflow fails before building if either value is missing. To publish:
 
 1. Commit and push these changes to the repository's `main` branch.
 2. In GitHub, open **Settings → Pages** and set the build and deployment source to **GitHub Actions**.
 3. Open the repository's **Actions** tab and select the **Deploy to GitHub Pages** workflow. Wait for both the build and deploy jobs to complete successfully.
 4. Visit `https://chithtoo6575-ai.github.io/e-commerce/` after the deployment job succeeds. You can also start a run manually from **Actions → Deploy to GitHub Pages → Run workflow**.
 
-GitHub Pages hosts static files only; it does not run `server.js`, Node.js APIs, or a database. Consequently, admin and customer API-backed features (including sign-in/OTP, persistent carts and orders, inventory changes, image uploads, email/SMS, and Telegram integrations) will not work from this Pages deployment alone. The API needs a separate server deployment with persistent storage and server-side credentials. The current frontend calls `/api` on its own origin (and Vite's `/api` proxy works only during local development), so an independently hosted API also needs a same-origin reverse proxy or an intentional frontend/API-origin and cross-origin configuration. Do not put API credentials in the frontend or GitHub Pages files.
+GitHub Pages hosts static files only; it does not run `server.js`, Node.js APIs, or a database. Consequently, admin and customer API-backed features (including sign-in/OTP, persistent carts and orders, inventory changes, image uploads, email/SMS, and Telegram integrations) will not work from this Pages deployment alone. Supabase-backed features work only after the project URL/key, database migration, authentication redirects, and RLS policies are configured. The legacy API needs a separate server deployment with persistent storage and server-side credentials. The current frontend calls `/api` on its own origin (and Vite's `/api` proxy works only during local development), so an independently hosted API also needs a same-origin reverse proxy or an intentional frontend/API-origin and cross-origin configuration. Do not put API credentials in the frontend or GitHub Pages files.
 
 `npm run admin:setup` creates or replaces the owner account by hashing the password with Node `scrypt` and storing only the salted hash in `data/admin.json`. Run it once for a new local account, or again whenever you intentionally change the credentials, then restart the API. Open `/admin/login` for owner access (or `/e-commerce/admin/login` when using this repository's configured deployment base). After signing in, use the Orders section or open `/admin/orders` directly. The API rejects every `/api/admin/*` request without an authenticated HttpOnly session. Admin credentials are never bundled into the frontend.
 
