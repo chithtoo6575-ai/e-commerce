@@ -13,7 +13,7 @@ import {
   IconChevronDown,
   IconNotifications
 } from './AdminIcons'
-import { NAV_STRUCTURE } from './navStructure'
+import { NAV_STRUCTURE, isNavigationItemAvailable } from './navStructure'
 import { adminFetch } from '../adminApi'
 import { getBasePath } from '../lib/baseUrl.js'
 
@@ -36,6 +36,8 @@ import CustomersPage from './pages/CustomersPage'
 import NotificationsPage from './pages/NotificationsPage'
 import SupportChannelsPage from './pages/SupportChannelsPage'
 import HelpItemsPage from './pages/HelpItemsPage'
+import StaffDashboardPage from './pages/StaffDashboardPage'
+import StaffManagementPage from './pages/StaffManagementPage'
 
 import { adminStore } from './adminStore'
 import { adminT, AdminLanguageSelector } from './adminI18n'
@@ -76,7 +78,9 @@ export default function AdminShell({
     const path = getAdminPath().toLowerCase()
     for (const group of NAV_STRUCTURE) {
       for (const item of group.items) {
-        if (path === item.path || (item.path === '/admin' && (path === '/admin/' || path === '/admin/dashboard'))) {
+        const targetPath = auth?.role === 'staff' ? item.path.replace(/^\/admin/, '/staff') : item.path
+        if (path === targetPath || (item.id === 'Dashboard' && (path === `${targetPath}/` || path === `${targetPath}/dashboard`))) {
+          if (!isNavigationItemAvailable(item, auth)) return 'Dashboard'
           return item.id
         }
       }
@@ -102,6 +106,13 @@ export default function AdminShell({
       return 'dark'
     }
   })
+  const isOwner = auth?.role === 'owner'
+  const permissions = auth?.role === 'staff' && Array.isArray(auth.permissions) ? auth.permissions : []
+  const availableGroups = useMemo(() => NAV_STRUCTURE.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => isNavigationItemAvailable(item, auth))
+  })).filter((group) => group.items.length > 0), [auth])
+  const hasPermission = (permission) => isOwner || permissions.includes(permission)
 
   // Toast Notifications system
   const [toasts, setToasts] = useState([])
@@ -114,33 +125,29 @@ export default function AdminShell({
   }
 
   // Manage Extended Store State
-  const [localStockMovements] = useState(() => adminStore.getStockMovements())
-  const [banners, setBanners] = useState(() => adminStore.getBanners())
-  const [homeSections, setHomeSections] = useState(() => adminStore.getHomeSections())
-  const [homeLayout, setHomeLayout] = useState(() => adminStore.getHomeLayout())
-  const [shippingRates, setShippingRates] = useState(() => adminStore.getShippingRates())
-  const [deliveryCompanies, setDeliveryCompanies] = useState(() => adminStore.getDeliveryCompanies())
-  const [paymentMethods, setPaymentMethods] = useState(() => adminStore.getPaymentMethods())
-  const [notifications, setNotifications] = useState(() => adminStore.getNotifications())
-  const [supportChannels, setSupportChannels] = useState(() => adminStore.getSupportChannels())
-  const [helpItems, setHelpItems] = useState(() => adminStore.getHelpItems())
+  const [localStockMovements] = useState(() => isOwner ? adminStore.getStockMovements() : [])
+  const [banners, setBanners] = useState(() => isOwner || permissions.includes('storefront.banners') ? adminStore.getBanners() : [])
+  const [homeSections, setHomeSections] = useState(() => isOwner || permissions.includes('storefront.home_sections') ? adminStore.getHomeSections() : [])
+  const [homeLayout, setHomeLayout] = useState(() => isOwner || permissions.includes('storefront.home_layout') ? adminStore.getHomeLayout() : [])
+  const [shippingRates, setShippingRates] = useState(() => isOwner || permissions.includes('shipping.manage') ? adminStore.getShippingRates() : [])
+  const [deliveryCompanies, setDeliveryCompanies] = useState(() => isOwner || permissions.includes('shipping.manage') ? adminStore.getDeliveryCompanies() : [])
+  const [paymentMethods, setPaymentMethods] = useState(() => isOwner ? adminStore.getPaymentMethods() : [])
+  const [notifications, setNotifications] = useState(() => isOwner || permissions.includes('notifications.view') || permissions.includes('notifications.send') ? adminStore.getNotifications() : [])
+  const [supportChannels, setSupportChannels] = useState(() => isOwner || permissions.includes('customers.support') ? adminStore.getSupportChannels() : [])
+  const [helpItems, setHelpItems] = useState(() => isOwner || permissions.includes('customers.support') ? adminStore.getHelpItems() : [])
   const storefrontSettingsRef = useRef({
-    homeSections: adminStore.getHomeSections(),
-    homeLayout: adminStore.getHomeLayout(),
-    shippingRates: adminStore.getShippingRates(),
-    deliveryCompanies: adminStore.getDeliveryCompanies(),
-    notifications: adminStore.getNotifications(),
-    helpItems: adminStore.getHelpItems()
+    homeSections: isOwner || permissions.includes('storefront.home_sections') ? adminStore.getHomeSections() : [],
+    homeLayout: isOwner || permissions.includes('storefront.home_layout') ? adminStore.getHomeLayout() : [],
+    shippingRates: isOwner || permissions.includes('shipping.manage') ? adminStore.getShippingRates() : [],
+    deliveryCompanies: isOwner || permissions.includes('shipping.manage') ? adminStore.getDeliveryCompanies() : [],
+    notifications: isOwner || permissions.includes('notifications.view') || permissions.includes('notifications.send') ? adminStore.getNotifications() : [],
+    helpItems: isOwner || permissions.includes('customers.support') ? adminStore.getHelpItems() : []
   })
 
   const applyStorefrontSettings = (settings) => {
     const saved = {
-      homeSections: Array.isArray(settings.homeSections) ? settings.homeSections : [],
-      homeLayout: Array.isArray(settings.homeLayout) ? settings.homeLayout : [],
-      shippingRates: Array.isArray(settings.shippingRates) ? settings.shippingRates : [],
-      deliveryCompanies: Array.isArray(settings.deliveryCompanies) ? settings.deliveryCompanies : [],
-      notifications: Array.isArray(settings.notifications) ? settings.notifications : [],
-      helpItems: Array.isArray(settings.helpItems) ? settings.helpItems : []
+      ...storefrontSettingsRef.current,
+      ...Object.fromEntries(Object.entries(settings).filter(([, value]) => Array.isArray(value)))
     }
     storefrontSettingsRef.current = saved
     setHomeSections(saved.homeSections)
@@ -158,11 +165,10 @@ export default function AdminShell({
   }
 
   const persistStorefrontSettings = async (changes) => {
-    const settings = { ...storefrontSettingsRef.current, ...changes }
     const response = await adminFetch('/api/admin/storefront-settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings)
+      body: JSON.stringify(changes)
     })
     const result = await response.json()
     if (!response.ok) throw new Error(result.error || 'Unable to save storefront settings.')
@@ -183,6 +189,7 @@ export default function AdminShell({
           if (active) applyStorefrontSettings(result.settings)
           return
         }
+        if (!isOwner) return
         const legacySettings = {
           homeSections: adminStore.getHomeSections(),
           homeLayout: adminStore.getHomeLayout(),
@@ -206,9 +213,10 @@ export default function AdminShell({
     }
     loadSettings()
     return () => { active = false }
-  }, [])
+  }, [auth])
 
   useEffect(() => {
+    if (!isOwner) return undefined
     let active = true
     adminFetch('/api/admin/payments')
       .then(async (response) => {
@@ -224,7 +232,7 @@ export default function AdminShell({
         if (active) showToast(paymentError.message || 'Unable to load payment methods.', 'error')
       })
     return () => { active = false }
-  }, [])
+  }, [isOwner])
 
   const stockMovements = useMemo(() => {
     const serverMovements = Array.isArray(data?.stockMovements) ? data.stockMovements : []
@@ -242,6 +250,19 @@ export default function AdminShell({
   }, [])
 
   useEffect(() => {
+    if (auth?.role !== 'staff') return
+    const path = getAdminPath().toLowerCase()
+    const item = NAV_STRUCTURE.flatMap((group) => group.items).find((entry) => {
+      const target = entry.path.replace(/^\/admin/, '/staff').toLowerCase()
+      return path === target || (entry.id === 'Dashboard' && [target, `${target}/`, `${target}/dashboard`].includes(path))
+    })
+    if (path === '/admin' || path.startsWith('/admin/') || !item || !isNavigationItemAvailable(item, auth)) {
+      setActiveTab('Dashboard')
+      window.history.replaceState(null, '', getAdminUrl('/staff'))
+    }
+  }, [auth, activeTab])
+
+  useEffect(() => {
     document.documentElement.dataset.adminTheme = theme
     try {
       localStorage.setItem('htoo_admin_theme', theme)
@@ -253,6 +274,7 @@ export default function AdminShell({
   // Sync support channels from the server, which is what the storefront Help page reads.
   useEffect(() => {
     let active = true
+    if (!isOwner && !hasPermission('customers.support')) return () => { active = false }
     adminFetch('/api/admin/support-channels')
       .then(async (response) => {
         const result = await response.json()
@@ -267,7 +289,7 @@ export default function AdminShell({
         if (active) showToast(channelError.message || 'Unable to load support channels.', 'error')
       })
     return () => { active = false }
-  }, [])
+  }, [auth])
 
   const saveSupportChannels = async (updated) => {
     try {
@@ -290,6 +312,7 @@ export default function AdminShell({
   // Sync banners from server
   useEffect(() => {
     let active = true
+    if (!isOwner && !hasPermission('storefront.banners')) return () => { active = false }
     adminFetch('/api/admin/banners')
       .then(async (response) => {
         const result = await response.json()
@@ -305,10 +328,15 @@ export default function AdminShell({
         if (active) showToast(bannerError.message || 'Unable to load banners.', 'error')
       })
     return () => { active = false }
-  }, [])
+  }, [auth])
 
   // Navigate helper that updates URL cleanly
   const navigateTo = (tabId) => {
+    const found = NAV_STRUCTURE.flatMap((group) => group.items).find((item) => item.id === tabId)
+    if (!found || !isNavigationItemAvailable(found, auth)) {
+      showToast('You do not have permission to access that section.', 'error')
+      return
+    }
     setActiveTab(tabId)
     setAutoOpenOrder(null)
     setSelectedOrderForDrawer(null)
@@ -316,14 +344,7 @@ export default function AdminShell({
     setProfileDropdownOpen(false)
     setNotifDropdownOpen(false)
 
-    let targetPath = '/admin'
-    for (const group of NAV_STRUCTURE) {
-      const found = group.items.find((it) => it.id === tabId)
-      if (found) {
-        targetPath = found.path
-        break
-      }
-    }
+    const targetPath = auth?.role === 'staff' ? found.path.replace(/^\/admin/, '/staff') : found.path
     if (window.location.pathname !== targetPath) {
       window.history.pushState(null, '', getAdminUrl(targetPath))
     }
@@ -458,7 +479,7 @@ export default function AdminShell({
 
         {/* Scrollable Navigation Groups */}
         <div className="sidebar-scroll-area">
-          {NAV_STRUCTURE.map((group) => (
+          {availableGroups.map((group) => (
             <div key={group.group} className="sidebar-group">
               <div className="sidebar-group-title">
                 {sidebarCollapsed ? adminT(group.group, language).slice(0, 3) : adminT(group.group, language)}
@@ -500,12 +521,12 @@ export default function AdminShell({
         <div className="sidebar-footer">
           <div className="sidebar-user-info">
             <div className="user-avatar-sm">
-              {(auth?.email || 'CH').slice(0, 2).toUpperCase()}
+              {(auth?.name || auth?.email || auth?.username || 'CH').slice(0, 2).toUpperCase()}
             </div>
             {!sidebarCollapsed && (
               <div className="user-names-col">
-                <span className="user-display-name">{adminT("Chit Htoo")}</span>
-                <span className="user-role-label">{adminT('Owner Access', language)}</span>
+                <span className="user-display-name">{auth?.name || adminT("Chit Htoo")}</span>
+                <span className="user-role-label">{adminT(isOwner ? 'Owner Access' : 'Staff Access', language)}</span>
               </div>
             )}
           </div>
@@ -621,30 +642,30 @@ export default function AdminShell({
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
               >
                 <div className="user-avatar-sm" style={{ width: 26, height: 26, fontSize: 10 }}>
-                  {(auth?.email || 'CH').slice(0, 2).toUpperCase()}
+                  {(auth?.name || auth?.email || auth?.username || 'CH').slice(0, 2).toUpperCase()}
                 </div>
-                <span className="font-medium text-sm">{adminT("Chit Htoo")}</span>
+                <span className="font-medium text-sm">{auth?.name || adminT("Chit Htoo")}</span>
                 <IconChevronDown size={14} className="text-muted" />
               </button>
 
               {profileDropdownOpen && (
                 <div className="profile-dropdown-card">
                   <div className="profile-dropdown-header">
-                    <strong>{adminT("Chit Htoo")}</strong>
-                    <small>{auth?.email || 'chithtoo6575@gmail.com'}</small>
+                    <strong>{auth?.name || adminT("Chit Htoo")}</strong>
+                    <small>{auth?.email || auth?.username}</small>
                   </div>
-                  <button
+                  {isOwner && <button
                     className="dropdown-item-btn"
                     onClick={() => { setProfileDropdownOpen(false); navigateTo('Payment Methods') }}
                   >
                     {adminT('Payment Settings', language)}
-                  </button>
-                  <button
+                  </button>}
+                  {hasPermission('shipping.manage') && <button
                     className="dropdown-item-btn"
                     onClick={() => { setProfileDropdownOpen(false); navigateTo('Shipping Rates') }}
                   >
                     {adminT('Shipping Configuration', language)}
-                  </button>
+                  </button>}
                   <button
                     className="dropdown-item-btn item-danger"
                     onClick={() => { setProfileDropdownOpen(false); onLogout?.() }}
@@ -661,18 +682,17 @@ export default function AdminShell({
         <main style={{ minHeight: 'calc(100vh - 68px)' }}>
           {/* GROUP 1: GENERAL */}
           {activeTab === 'Dashboard' && (
-            <DashboardPage
-              data={data}
-              onNavigate={navigateTo}
-              onOpenOrder={(order) => {
-                // navigateTo clears both hand-off states, so queue it afterwards.
-                navigateTo('Orders')
-                setAutoOpenOrder(order)
-              }}
-              onOpenProductModal={() => {
-                navigateTo('Products')
-              }}
-            />
+            isOwner ? (
+              <DashboardPage
+                data={data}
+                onNavigate={navigateTo}
+                onOpenOrder={(order) => {
+                  navigateTo('Orders')
+                  setAutoOpenOrder(order)
+                }}
+                onOpenProductModal={() => navigateTo('Products')}
+              />
+            ) : <StaffDashboardPage data={data} onNavigate={navigateTo} permissions={permissions} />
           )}
 
           {/* GROUP 2: PRODUCT MANAGEMENT */}
@@ -683,6 +703,12 @@ export default function AdminShell({
               subCategories={subCategories}
               onSaveProduct={onSaveProduct}
               onDeleteProduct={onDeleteProduct}
+              canAdd={hasPermission('products.add')}
+              canView={hasPermission('products.view')}
+              canEdit={hasPermission('products.edit')}
+              canDelete={hasPermission('products.delete')}
+              canManageCost={isOwner}
+              canUpdateStock={hasPermission('stock.update')}
               showToast={showToast}
             />
           )}
@@ -713,6 +739,7 @@ export default function AdminShell({
               movements={stockMovements}
               products={products}
               onAddMovement={handleAddStockMovement}
+              canUpdate={hasPermission('stock.update')}
               showToast={showToast}
             />
           )}
@@ -774,6 +801,8 @@ export default function AdminShell({
               orders={orders}
               deliveryCompanies={deliveryCompanies}
               onUpdateOrder={onUpdateOrder}
+              permissions={permissions}
+              isOwner={isOwner}
               onRefreshOrders={onRefreshOrders}
               selectedOrderFromNav={selectedOrderForDrawer || autoOpenOrder}
               showToast={showToast}
@@ -785,6 +814,8 @@ export default function AdminShell({
               orders={orders}
               deliveryCompanies={deliveryCompanies}
               onUpdateOrder={onUpdateOrder}
+              permissions={permissions}
+              isOwner={isOwner}
               onRefreshOrders={onRefreshOrders}
               showToast={showToast}
             />
@@ -827,6 +858,8 @@ export default function AdminShell({
               customers={customers}
               orders={orders}
               onUpdateCustomerStatus={onUpdateCustomerStatus}
+              canEdit={hasPermission('customers.edit')}
+              canManageSupport={hasPermission('customers.support')}
               showToast={showToast}
             />
           )}
@@ -856,6 +889,19 @@ export default function AdminShell({
                 await persistStorefrontSettings({ helpItems: updated })
               }}
               showToast={showToast}
+            />
+          )}
+
+          {['Staff Management', 'Staff Permissions', 'Staff Activity Logs'].includes(activeTab) && isOwner && (
+            <StaffManagementPage
+              initialTab={{
+                'Staff Management': 'accounts',
+                'Staff Permissions': 'permissions',
+                'Staff Activity Logs': 'activity'
+              }[activeTab]}
+              showToast={showToast}
+              language={language}
+              onLanguageChange={onLanguageChange}
             />
           )}
         </main>

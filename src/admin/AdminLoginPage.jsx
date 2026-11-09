@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AdminLanguageSelector, adminT } from './adminI18n'
 
 export default function AdminLoginPage({
+  role,
   language,
   onLanguageChange,
   login,
@@ -10,6 +11,8 @@ export default function AdminLoginPage({
   error
 }) {
   const [showPassword, setShowPassword] = useState(false)
+  const isStaff = role === 'staff'
+  const isUnified = role === 'unified'
 
   return (
     <main className="admin-login">
@@ -18,17 +21,17 @@ export default function AdminLoginPage({
       </div>
       <section className="login-panel" aria-labelledby="admin-login-title">
         <div className="admin-mark" aria-hidden="true">H</div>
-        <p className="admin-kicker">{adminT('SELLER DASHBOARD ACCESS', language)}</p>
+        <p className="admin-kicker">{adminT(isUnified ? 'ADMIN DASHBOARD ACCESS' : isStaff ? 'STAFF DASHBOARD ACCESS' : 'OWNER DASHBOARD ACCESS', language)}</p>
         <h1 id="admin-login-title">{adminT('HTOO ATELIER', language)}</h1>
         <p className="admin-tagline">
-          {adminT('Sign in to access inventory, sales orders, storefront merchandising, and customer support.', language)}
+          {adminT(isUnified ? 'Sign in with your Owner or Staff Gmail and password.' : isStaff ? 'Sign in with your Staff Gmail and password.' : 'Sign in with the Owner account to access all dashboard features.', language)}
         </p>
 
         <form onSubmit={onSubmit}>
-          <label htmlFor="admin-email">
-            {adminT('Admin Email', language)}
+          <label htmlFor={isStaff ? 'staff-email' : 'owner-email'}>
+            {adminT(isUnified || isStaff ? 'Gmail' : 'Owner Email', language)}
             <input
-              id="admin-email"
+              id={isStaff ? 'staff-email' : 'owner-email'}
               type="email"
               name="email"
               autoComplete="username"
@@ -37,11 +40,11 @@ export default function AdminLoginPage({
               onChange={(event) => onLoginChange({ ...login, email: event.target.value })}
             />
           </label>
-          <label htmlFor="admin-password">
-            {adminT('Admin Password', language)}
+          <label htmlFor="account-password">
+            {adminT(isUnified ? 'Password' : isStaff ? 'Staff Password' : 'Owner Password', language)}
             <span className="admin-password-field">
               <input
-                id="admin-password"
+                id="account-password"
                 type={showPassword ? 'text' : 'password'}
                 name="password"
                 autoComplete="current-password"
@@ -55,7 +58,7 @@ export default function AdminLoginPage({
                 className="admin-password-toggle"
                 onClick={() => setShowPassword((visible) => !visible)}
                 aria-label={adminT(showPassword ? 'Hide password' : 'Show password', language)}
-                aria-controls="admin-password"
+                aria-controls="account-password"
                 aria-pressed={showPassword}
                 title={adminT(showPassword ? 'Hide password' : 'Show password', language)}
               >

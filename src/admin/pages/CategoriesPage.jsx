@@ -269,7 +269,7 @@ function CategoryModal({ category, onClose, onSave }) {
     try {
       let image = formData.image
       if (pendingImageFile) {
-        const uploadResponse = await adminFetch('/api/admin/upload', {
+        const uploadResponse = await adminFetch('/api/admin/upload?purpose=category', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ file: formData.image, filename: pendingImageFile.name })

@@ -21,6 +21,12 @@ export default function ProductsPage({
   subCategories = [],
   onSaveProduct,
   onDeleteProduct,
+  canAdd = true,
+  canView = true,
+  canEdit = true,
+  canDelete = true,
+  canManageCost = true,
+  canUpdateStock = true,
   showToast
 }) {
   // Filters & State
@@ -134,7 +140,7 @@ export default function ProductsPage({
           <h2>{adminT("Product Catalog")}</h2>
           <p className="page-subtitle">{adminT("Manage items, inventory counts, pricing, and variants")}</p>
         </div>
-        <button
+        {canAdd && <button
           className="admin-btn-gold"
           onClick={() => setEditingProduct({
             name: '',
@@ -147,7 +153,7 @@ export default function ProductsPage({
             salePrice: 0,
             costPrice: 15000,
             weightKg: 0,
-            stock: 20,
+            stock: canUpdateStock ? 20 : 0,
             lowStockThreshold: 5,
             image: '',
             description: '',
@@ -159,7 +165,7 @@ export default function ProductsPage({
         >
           <IconPlus size={16} />
           <span>{adminT("Add Product")}</span>
-        </button>
+        </button>}
       </div>
 
       {/* Filter and Control Bar */}
@@ -239,28 +245,28 @@ export default function ProductsPage({
         </div>
 
         {/* Bulk Action Bar when items selected */}
-        {selectedIds.length > 0 && (
+        {selectedIds.length > 0 && (canEdit || canDelete) && (
           <div className="bulk-action-bar">
             <span>{selectedIds.length} product(s) selected:</span>
             <div className="bulk-btn-group">
-              <button
+              {canEdit && <button
                 className="admin-btn-secondary btn-sm"
                 onClick={() => setBulkActionConfirm('activate')}
               >
                 {adminT("Mark Active")}
-              </button>
-              <button
+              </button>}
+              {canEdit && <button
                 className="admin-btn-secondary btn-sm"
                 onClick={() => setBulkActionConfirm('deactivate')}
               >
                 {adminT("Mark Draft")}
-              </button>
-              <button
+              </button>}
+              {canDelete && <button
                 className="admin-btn-danger btn-sm"
                 onClick={() => setBulkActionConfirm('delete')}
               >
                 {adminT("Delete Selected")}
-              </button>
+              </button>}
             </div>
           </div>
         )}
@@ -272,13 +278,14 @@ export default function ProductsPage({
           <table className="admin-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>
+                {(canEdit || canDelete) && <th style={{ width: 36 }}>
                   <input
                     type="checkbox"
+                    disabled={!canEdit && !canDelete}
                     checked={paginatedProducts.length > 0 && selectedIds.length === paginatedProducts.length}
                     onChange={handleSelectAll}
                   />
-                </th>
+                </th>}
                 <th>{adminT("Product")}</th>
                 <th>{adminT("SKU")}</th>
                 <th>{adminT("Category")}</th>
@@ -303,13 +310,14 @@ export default function ProductsPage({
 
                   return (
                     <tr key={p.id} className={`table-row-hover ${isSelected ? 'row-selected' : ''}`}>
-                      <td>
+                      {(canEdit || canDelete) && <td>
                         <input
                           type="checkbox"
+                          disabled={!canEdit && !canDelete}
                           checked={isSelected}
                           onChange={() => handleSelectOne(p.id)}
                         />
-                      </td>
+                      </td>}
                       <td>
                         <div className="table-product-cell">
                           <div className="prod-thumb">
@@ -353,30 +361,30 @@ export default function ProductsPage({
                       </td>
                       <td className="td-action">
                         <div className="action-button-group">
-                          <button
+                          {canView && <button
                             className="admin-icon-btn"
                             title={adminT("View product details")}
                             aria-label={adminT("View product details")}
                             onClick={() => setViewingProduct(p)}
                           >
                             <IconEye size={15} />
-                          </button>
-                          <button
+                          </button>}
+                          {canEdit && <button
                             className="admin-icon-btn"
                             title={adminT("Edit product")}
                             aria-label={adminT("Edit product")}
                             onClick={() => setEditingProduct({ ...p })}
                           >
                             <IconEdit size={15} />
-                          </button>
-                          <button
+                          </button>}
+                          {canDelete && <button
                             className="admin-icon-btn btn-danger-hover"
                             title={adminT("Delete product")}
                             aria-label={adminT("Delete product")}
                             onClick={() => setDeleteConfirmId(p.id)}
                           >
                             <IconTrash size={15} />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -421,11 +429,15 @@ export default function ProductsPage({
           product={editingProduct}
           categories={categories}
           subCategories={subCategories}
+          canManageCost={canManageCost}
+          canUpdateStock={canUpdateStock}
           onClose={() => setEditingProduct(null)}
           onSave={async (savedData) => {
             try {
               if (!onSaveProduct) throw new Error('The product API is unavailable.')
-              const ok = await onSaveProduct(savedData)
+              const payload = { ...savedData }
+              if (!canManageCost) delete payload.costPrice
+              const ok = await onSaveProduct(payload)
               if (!ok) throw new Error('The product was not saved.')
               showToast?.(savedData.id != null ? 'Product updated successfully' : 'Product created successfully', 'success')
               setEditingProduct(null)
@@ -441,11 +453,11 @@ export default function ProductsPage({
         <ProductDetailDrawer
           product={viewingProduct}
           onClose={() => setViewingProduct(null)}
-          onEdit={() => {
+          onEdit={canEdit ? () => {
             const p = { ...viewingProduct }
             setViewingProduct(null)
             setEditingProduct(p)
-          }}
+          } : null}
         />
       )}
 
@@ -483,7 +495,7 @@ export default function ProductsPage({
 }
 
 // ---------------- Product Form Modal Component ----------------
-function ProductFormModal({ product, categories, subCategories, onClose, onSave }) {
+function ProductFormModal({ product, categories, subCategories, canManageCost, canUpdateStock, onClose, onSave }) {
   const [formData, setFormData] = useState(() => ({
     ...product,
     nameEn: product.nameEn || product.name || '',
@@ -631,7 +643,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
     try {
       finalImages = await Promise.all(imageItems.map(async ({ url, file, fileName }) => {
         if (!file) return url
-        const uploadRes = await adminFetch('/api/admin/upload', {
+        const uploadRes = await adminFetch(`/api/admin/upload?purpose=${formData.id ? 'product-edit' : 'product'}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ file: url, filename: fileName })
@@ -781,7 +793,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
               />
             </div>
 
-            <div className="form-group">
+            {canManageCost && <div className="form-group">
               <label>{adminT("Cost Price (Ks)")}</label>
               <input
                 type="number"
@@ -789,7 +801,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                 value={formData.costPrice}
                 onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
               />
-            </div>
+            </div>}
           </div>
 
           <div className="form-grid-3">
@@ -800,7 +812,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                 min="0"
                 required
                 value={formData.trackVariantStock ? variantStockTotal : formData.stock}
-                disabled={formData.trackVariantStock}
+                disabled={formData.trackVariantStock || !canUpdateStock}
                 onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
               />
               {formData.trackVariantStock && <span className="text-muted text-xs">{adminT("Calculated from the variant quantities below.")}</span>}
@@ -940,6 +952,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
             <label className="checkbox-label">
               <input
                 type="checkbox"
+                disabled={!canUpdateStock}
                 checked={formData.trackVariantStock}
                 onChange={(event) => {
                   const enabled = event.target.checked
@@ -961,6 +974,7 @@ function ProductFormModal({ product, categories, subCategories, onClose, onSave 
                       <input
                         type="number"
                         min="0"
+                        disabled={!canUpdateStock}
                         step="1"
                         required
                         value={formData.variantStock[option.key] ?? ''}

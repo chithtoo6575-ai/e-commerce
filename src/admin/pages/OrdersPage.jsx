@@ -111,8 +111,12 @@ export default function OrdersPage({
   onUpdateOrder,
   onRefreshOrders,
   selectedOrderFromNav = null,
+  permissions = [],
+  isOwner = false,
   showToast
 }) {
+  const canViewOrderDetails = isOwner || permissions.includes('orders.details')
+  const canManageShipping = isOwner || permissions.includes('shipping.manage')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusTab, setStatusTab] = useState('All')
   const [paymentFilter, setPaymentFilter] = useState('All')
@@ -253,6 +257,7 @@ export default function OrdersPage({
           </div>
 
           <div className="filter-dropdown-group">
+            {isOwner && (
             <select
               value={paymentFilter}
               onChange={(e) => setPaymentFilter(e.target.value)}
@@ -264,6 +269,7 @@ export default function OrdersPage({
               <option value="Rejected">{adminT("Rejected")}</option>
               <option value="Not Required">{adminT("Not Required (COD)")}</option>
             </select>
+            )}
 
             <select
               value={shippingFilter}
@@ -298,9 +304,9 @@ export default function OrdersPage({
                 <th>{adminT("Customer Details")}</th>
                 <th>{adminT("Date")}</th>
                 <th>{adminT("Items")}</th>
-                <th>{adminT("Total (Ks)")}</th>
-                <th>{adminT("Payment Method")}</th>
-                <th>{adminT("Payment Status")}</th>
+                {isOwner && <th>{adminT("Total (Ks)")}</th>}
+                {isOwner && <th>{adminT("Payment Method")}</th>}
+                {isOwner && <th>{adminT("Payment Status")}</th>}
                 <th>{adminT("Fulfillment")}</th>
                 <th className="th-action">{adminT("Actions")}</th>
               </tr>
@@ -308,11 +314,11 @@ export default function OrdersPage({
             <tbody>
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="table-empty-cell">{' ' + adminT("No orders match your filter criteria.") + ' '}</td>
+                  <td colSpan={isOwner ? 9 : 6} className="table-empty-cell">{' ' + adminT("No orders match your filter criteria.") + ' '}</td>
                 </tr>
               ) : (
                 filteredOrders.map((order) => {
-                  const itemCount = (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 1), 0)
+                  const itemCount = order.itemCount ?? (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 1), 0)
                   return (
                     <tr key={order.id} className="table-row-hover">
                       <td className="td-mono font-medium">
@@ -332,29 +338,29 @@ export default function OrdersPage({
                       <td>
                         <span className="badge-number-pill">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
                       </td>
-                      <td>
+                      {isOwner && <td>
                         <strong className="gold-accent-text font-bold">
                           {formatMoney(order.total)}
                         </strong>
-                      </td>
-                      <td>
+                      </td>}
+                      {isOwner && <td>
                         <span className="text-secondary">{order.paymentMethod || 'COD'}</span>
-                      </td>
-                      <td>
+                      </td>}
+                      {isOwner && <td>
                         <Badge>{order.paymentStatus || 'Confirmed'}</Badge>
-                      </td>
+                      </td>}
                       <td>
                         <Badge>{order.status || 'New'}</Badge>
                       </td>
                       <td className="td-action">
-                        <button
+                        {canViewOrderDetails && <button
                           className="admin-icon-btn"
                           title={adminT("View order details")}
                           aria-label={adminT("View order details")}
                           onClick={() => setSelectedOrder(order)}
                         >
                           <IconEye size={15} />
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   )
@@ -371,11 +377,13 @@ export default function OrdersPage({
           order={selectedOrder}
           orders={orders}
           deliveryCompanies={deliveryCompanies}
+          permissions={permissions}
+          isOwner={isOwner}
           onClose={() => setSelectedOrder(null)}
           onStatusClick={(newStatus, actionLabel) => {
             setConfirmStatusChange({ id: selectedOrder.id, newStatus, actionLabel })
           }}
-          onVerifyPayment={async (status, reason) => {
+          onVerifyPayment={isOwner ? async (status, reason) => {
             try {
               const updatedOrder = await onUpdateOrder?.(selectedOrder.id, { paymentStatus: status, ...(reason ? { paymentRejectionReason: reason } : {}) })
               if (!updatedOrder) throw new Error('The payment status was not updated.')
@@ -384,7 +392,7 @@ export default function OrdersPage({
             } catch (updateError) {
               showToast?.(updateError.message || 'Unable to update payment status.', 'error')
             }
-          }}
+          } : undefined}
           onUpdateShipping={async (changes) => {
             try {
               const updatedOrder = await onUpdateOrder?.(selectedOrder.id, changes)
@@ -508,8 +516,14 @@ export function OrderDetailDrawer({
   onVerifyPayment,
   onUpdateShipping,
   onSaveVoucher,
-  readOnly = false
+  readOnly = false,
+  permissions = [],
+  isOwner = false
 }) {
+  const canConfirmOrders = isOwner || permissions.includes('orders.confirm')
+  const canCancelOrders = isOwner || permissions.includes('orders.cancel')
+  const canUpdateOrderStatus = isOwner || permissions.includes('orders.status')
+  const canManageShipping = isOwner || permissions.includes('shipping.manage')
   const items = order.items || []
   const distinctProductCount = new Set(items.map((item) => item.productId || item.id).filter(Boolean)).size
   const totalItemCount = items.reduce((count, item) => count + Number(item.quantity || 1), 0)
@@ -628,14 +642,14 @@ export function OrderDetailDrawer({
                 <small>{adminT("Email")}</small>
                 <span className="text-secondary">{order.customer?.email || 'Not provided'}</span>
               </div>
-              <div className="spec-card">
+              {isOwner && <div className="spec-card">
                 <small>{adminT("Payment Method")}</small>
                 <strong className="gold-accent-text">{order.paymentMethod || 'COD'}</strong>
-              </div>
-              <div className="spec-card">
+              </div>}
+              {isOwner && <div className="spec-card">
                 <small>{adminT("Payment Status")}</small>
                 <Badge>{order.paymentStatus || 'Confirmed'}</Badge>
-              </div>
+              </div>}
               <div className="spec-card">
                 <small>{adminT("Order Status")}</small>
                 <Badge>{order.status || 'New'}</Badge>
@@ -664,7 +678,7 @@ export function OrderDetailDrawer({
               </div>
             </div>
 
-            <div className="drawer-section">
+            {isOwner && <div className="drawer-section">
               <h5>{adminT("Order Financial Summary")}</h5>
               <div className="order-totals-box">
                 <div className="total-row">
@@ -685,9 +699,9 @@ export function OrderDetailDrawer({
                   <strong className="gold-accent-text">{formatMoney(orderGrandTotal)}</strong>
                 </div>
               </div>
-            </div>
+            </div>}
 
-            {order.paymentRejectionReason && (
+            {isOwner && order.paymentRejectionReason && (
               <div className="drawer-section">
                 <h5>{adminT("Payment Information")}</h5>
                 <div className="drawer-specs-grid">
@@ -720,7 +734,11 @@ export function OrderDetailDrawer({
               <small>{adminT(order.status || 'New')}</small>
             </div>
             <div className="status-action-btns">
-              {workflowActions.map((action) => (
+              {workflowActions.filter((action) => action.status === 'Confirmed'
+                ? canConfirmOrders
+                : action.status === 'Cancelled'
+                  ? canCancelOrders
+                  : canUpdateOrderStatus).map((action) => (
                 <button
                   key={action.status}
                   type="button"
@@ -780,11 +798,11 @@ export function OrderDetailDrawer({
               <small>{adminT("Email")}</small>
               <span className="text-secondary">{order.customer?.email || 'Not provided'}</span>
             </div>
-            <div className="spec-card">
+            {isOwner && <div className="spec-card">
               <small>{adminT("Payment Method")}</small>
               <strong className="gold-accent-text">{order.paymentMethod || 'COD'}</strong>
-            </div>
-            <div className="spec-card">
+            </div>}
+            {isOwner && <div className="spec-card">
               <small>{adminT("Payment Verification")}</small>
               <div className="payment-verify-row">
                 <Badge>{order.paymentStatus || 'Confirmed'}</Badge>
@@ -818,7 +836,7 @@ export function OrderDetailDrawer({
                   )
                 )}
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* Delivery Address */}
@@ -835,7 +853,7 @@ export function OrderDetailDrawer({
           <div className="drawer-section">
             <h5>{adminT("Delivery & Tracking")}</h5>
             <p className="text-secondary text-sm">Method: {order.deliveryMethod || 'Not specified'} · Shipping status: {order.shippingStatus || 'Preparing'}</p>
-            <div className="form-grid-2">
+            {canManageShipping && <><div className="form-grid-2">
               <label className="form-group">{adminT("Delivery company")}
                 <select value={deliveryCompany} onChange={(event) => setDeliveryCompany(event.target.value)}>
                   <option value="">{adminT('Select a delivery company')}</option>
@@ -858,7 +876,7 @@ export function OrderDetailDrawer({
               }}
             >
               {adminT(shippingSaving ? 'Saving…' : 'Save Shipping Details')}
-            </button>
+            </button></>}
           </div>
 
           {/* Order Details — itemized line items */}
@@ -891,23 +909,23 @@ export function OrderDetailDrawer({
                     <span className="text-muted text-xs">
                       Variant: {[it.variants?.size, it.variants?.color].filter(Boolean).join(' / ') || 'None'}
                     </span>
-                    <span className="text-secondary text-sm">
+                    {isOwner && <span className="text-secondary text-sm">
                       {formatMoney(it.price)} &times; {it.quantity || 1}
-                    </span>
+                    </span>}
                   </div>
-                  <div className="drawer-prod-total">
+                  {isOwner && <div className="drawer-prod-total">
                     <small>{adminT("Line total")}</small>
                     <strong className="gold-accent-text">
                       {formatMoney(it.lineTotal ?? (it.price || 0) * (it.quantity || 1))}
                     </strong>
-                  </div>
+                  </div>}
                 </div>
               ))}
             </div>
           </div>
 
           {/* Financial Breakdown */}
-          <div className="drawer-section">
+          {isOwner && <div className="drawer-section">
             <h5>{adminT("Order Financial Summary")}</h5>
             <div className="order-totals-box">
               <div className="total-row">
@@ -928,9 +946,9 @@ export function OrderDetailDrawer({
                 <strong className="gold-accent-text">{formatMoney(grandTotal)}</strong>
               </div>
             </div>
-          </div>
+          </div>}
 
-          {customerHistory.length > 0 && (
+          {isOwner && customerHistory.length > 0 && (
             <div className="drawer-section">
               <h5>Other Customer Orders ({customerHistory.length})</h5>
               {customerHistory.map((customerOrder) => (
@@ -942,24 +960,28 @@ export function OrderDetailDrawer({
             </div>
           )}
 
-          <div className="drawer-section">
-            <h5>{adminT("Payment Information")}</h5>
-            <div className="drawer-specs-grid">
-              <div className="spec-card"><small>{adminT("Payment amount")}</small><strong>{formatMoney(order.paymentAmount ?? grandTotal)}</strong></div>
-              <div className="spec-card"><small>{adminT("Payment date")}</small><span className="text-secondary">{order.paymentUpdatedAt ? new Date(order.paymentUpdatedAt).toLocaleString() : 'Not verified yet'}</span></div>
-              <div className="spec-card"><small>{adminT("Reference ID")}</small><span className="text-secondary font-mono">{order.transactionId || order.referenceId || 'Not provided'}</span></div>
-              {order.paymentRejectionReason && <div className="spec-card"><small>{adminT("Rejection reason")}</small><span className="text-secondary">{order.paymentRejectionReason}</span></div>}
+          {isOwner && (
+            <div className="drawer-section">
+              <h5>{adminT("Payment Information")}</h5>
+              <div className="drawer-specs-grid">
+                <div className="spec-card"><small>{adminT("Payment amount")}</small><strong>{formatMoney(order.paymentAmount ?? grandTotal)}</strong></div>
+                <div className="spec-card"><small>{adminT("Payment date")}</small><span className="text-secondary">{order.paymentUpdatedAt ? new Date(order.paymentUpdatedAt).toLocaleString() : 'Not verified yet'}</span></div>
+                <div className="spec-card"><small>{adminT("Reference ID")}</small><span className="text-secondary font-mono">{order.transactionId || order.referenceId || 'Not provided'}</span></div>
+                {order.paymentRejectionReason && <div className="spec-card"><small>{adminT("Rejection reason")}</small><span className="text-secondary">{order.paymentRejectionReason}</span></div>}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="drawer-section">
-            <h5>{adminT("Payment Slip")}</h5>
-            {(order.receipt?.dataUrl || order.paymentProof) ? (
-              <button className="payment-slip-view payment-slip-button" onClick={() => setSlipOpen(true)} title={adminT("Open payment slip")}>
-                <img src={order.receipt?.dataUrl || order.paymentProof} alt={adminT("Uploaded payment slip thumbnail")} />
-              </button>
-            ) : <p className="text-secondary">{adminT("Payment slip မတင်ရသေးပါ")}</p>}
-          </div>
+          {isOwner && (
+            <div className="drawer-section">
+              <h5>{adminT("Payment Slip")}</h5>
+              {(order.receipt?.dataUrl || order.paymentProof) ? (
+                <button className="payment-slip-view payment-slip-button" onClick={() => setSlipOpen(true)} title={adminT("Open payment slip")}>
+                  <img src={order.receipt?.dataUrl || order.paymentProof} alt={adminT("Uploaded payment slip thumbnail")} />
+                </button>
+              ) : <p className="text-secondary">{adminT("Payment slip မတင်ရသေးပါ")}</p>}
+            </div>
+          )}
 
           <div className="drawer-section">
             <h5>{adminT("Order Timeline")}</h5>
@@ -973,7 +995,7 @@ export function OrderDetailDrawer({
             </div>
           </div>
 
-          <section className="order-voucher-editor" aria-label={adminT('Edit delivery voucher details')}>
+          {isOwner && <section className="order-voucher-editor" aria-label={adminT('Edit delivery voucher details')}>
             <h3>{adminT('Edit delivery voucher details')}</h3>
             <div className="order-voucher-editor-fields">
               <label className="form-group">
@@ -1027,9 +1049,9 @@ export function OrderDetailDrawer({
               <strong>{formatMoney(grandTotal)}</strong>
             </div>
             {voucherError && <p className="order-voucher-error" role="alert">{voucherError}</p>}
-          </section>
+          </section>}
 
-          <section className="order-voucher" aria-label={adminT('Delivery parcel voucher')}>
+          {isOwner && <section className="order-voucher" aria-label={adminT('Delivery parcel voucher')}>
             <header className="order-voucher-header">
               <img className="order-voucher-logo" src={`${getBasePath()}/logo.svg`} alt={adminT('H logo')} />
               <div>
@@ -1090,16 +1112,16 @@ export function OrderDetailDrawer({
                 <div className="order-voucher-payment-method"><span>{adminT('Payment Method')}</span><strong>{/kbz\s*pay/i.test(String(order.paymentMethod || '')) ? 'KBZPay' : order.paymentMethod || 'KBZPay'}</strong></div>
               </div>
             </div>
-          </section>
+          </section>}
         </div>
 
         <div className="drawer-footer">
           <button className="admin-btn-secondary" onClick={onClose}>{' ' + adminT("Close") + ' '}</button>
-          <button className="admin-btn-gold order-voucher-print-button" type="button" onClick={handleSaveAndPrintVoucher} disabled={voucherSaving}>
+          {isOwner && <button className="admin-btn-gold order-voucher-print-button" type="button" onClick={handleSaveAndPrintVoucher} disabled={voucherSaving}>
             {adminT(voucherSaving ? 'Saving voucher…' : 'Save Updates & Generate Delivery Parcel Label')}
-          </button>
+          </button>}
         </div>
-        {slipOpen && (
+        {isOwner && slipOpen && (
           <div className="admin-modal-overlay slip-lightbox" onClick={() => setSlipOpen(false)}>
             <div className="slip-lightbox-content" onClick={(event) => event.stopPropagation()}>
               <button className="modal-close-btn slip-lightbox-close" onClick={() => setSlipOpen(false)}><IconX size={16} /></button>

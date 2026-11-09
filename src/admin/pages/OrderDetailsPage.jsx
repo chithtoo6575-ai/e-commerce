@@ -80,6 +80,8 @@ export default function OrderDetailsPage({
   onUpdateOrder,
   onRefreshOrders,
   showToast,
+  permissions = [],
+  isOwner = false,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [orderFilter, setOrderFilter] = useState("All");
@@ -454,6 +456,8 @@ export default function OrderDetailsPage({
           order={selectedOrder}
           orders={orders}
           deliveryCompanies={deliveryCompanies}
+          permissions={permissions}
+          isOwner={isOwner}
           readOnly
           onClose={() => setSelectedOrder(null)}
           onUpdateShipping={async (changes) => {

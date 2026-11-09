@@ -550,7 +550,7 @@ const MYANMAR = {
   'View customer profile': 'ဖောက်သည်အချက်အလက်ကြည့်ရန်',
   'View order details': 'အော်ဒါအသေးစိတ်ကြည့်ရန်',
   'View product details': 'ကုန်ပစ္စည်းအသေးစိတ်ကြည့်ရန်',
-  'View Orders': 'အော်ဒါများကြည့်ရန်',
+  'View Orders': 'အော်ဒါကြည့်ရန်',
   'View All Orders ↗': 'အော်ဒါအားလုံးကြည့်ရန် ↗',
   'Delete Selected': 'ရွေးထားသည်များဖျက်ရန်',
   'Banner Artwork Preview': 'ဘန်နာပုံအစမ်းကြည့်ရန်',
@@ -814,13 +814,144 @@ const MYANMAR = {
   'Printed on': 'ပရင့်ထုတ်သည့်အချိန်',
   'Total rows': 'စုစုပေါင်းကြောင်းအရေအတွက်',
   'Total quantity': 'စုစုပေါင်းအရေအတွက်',
+  'ORDER MANAGEMENT': 'အော်ဒါစီမံခန့်ခွဲမှု',
+  'CUSTOMER MANAGEMENT': 'ဖောက်သည်စီမံခန့်ခွဲမှု',
+  'STOREFRONT MANAGEMENT': 'ဆိုင်မျက်နှာစာစီမံခန့်ခွဲမှု',
+  'STAFF MANAGEMENT': 'ဝန်ထမ်းစီမံခန့်ခွဲမှု',
+  'NOTIFICATIONS': 'အသိပေးချက်များ',
+  'Product Management': 'ကုန်ပစ္စည်းစီမံခန့်ခွဲမှု',
+  'Customer Management': 'ဖောက်သည်စီမံခန့်ခွဲမှု',
+  'Storefront Management': 'ဆိုင်မျက်နှာစာစီမံခန့်ခွဲမှု',
+  'View Products': 'ကုန်ပစ္စည်းကြည့်ရန်',
+  'Add Products': 'ကုန်ပစ္စည်းအသစ်ထည့်ရန်',
+  'Edit Products': 'ကုန်ပစ္စည်းပြင်ဆင်ရန်',
+  'Delete Products': 'ကုန်ပစ္စည်းဖျက်ရန်',
+  'Manage Categories': 'ကုန်ပစ္စည်းအမျိုးအစားစီမံရန်',
+  'Manage Subcategories': 'အမျိုးအစားခွဲများစီမံရန်',
+  'View Stock': 'လက်ကျန်ပစ္စည်းကြည့်ရန်',
+  'Update Stock': 'လက်ကျန်ပစ္စည်းအရေအတွက်ပြင်ရန်',
+  'View Order Details': 'အော်ဒါအသေးစိတ်ကြည့်ရန်',
+  'Confirm Orders': 'အော်ဒါအတည်ပြုရန်',
+  'Update Order Status': 'အော်ဒါအခြေအနေပြောင်းရန်',
+  'Cancel Orders': 'အော်ဒါပယ်ဖျက်ရန်',
+  'Manage Shipping': 'ပို့ဆောင်ရေးစီမံရန်',
+  'View Customers': 'ဖောက်သည်စာရင်းကြည့်ရန်',
+  'Edit Customer Information': 'ဖောက်သည်အချက်အလက်ပြင်ရန်',
+  'Manage Customer Support': 'ဖောက်သည်ဝန်ဆောင်မှုစီမံရန်',
+  'Manage Banner Images': 'ကြော်ငြာပုံများစီမံရန်',
+  'Manage Home Sections': 'ပင်မစာမျက်နှာအပိုင်းများစီမံရန်',
+  'Manage Home Layout': 'ပင်မစာမျက်နှာပုံစံပြင်ရန်',
+  'View Notifications': 'အသိပေးချက်ကြည့်ရန်',
+  'Send Notifications': 'အသိပေးချက်ပို့ရန်',
+  'Staff Management': 'ဝန်ထမ်းစီမံခန့်ခွဲမှု',
+  'Add New Staff': 'ဝန်ထမ်းအသစ်ထည့်ရန်',
+  'Staff Permissions': 'ဝန်ထမ်းခွင့်ပြုချက်များ',
+  'Staff Activity Logs': 'ဝန်ထမ်းလုပ်ဆောင်ချက်မှတ်တမ်းများ',
+  'Staff Account Management': 'ဝန်ထမ်းအကောင့်စီမံခန့်ခွဲမှု',
+  'Create and manage Staff accounts.': 'ဝန်ထမ်းအကောင့်များကို ဖန်တီးပြီး စီမံနိုင်ပါသည်။',
+  'Create and manage up to {count} individual Staff accounts.': 'ဝန်ထမ်းအကောင့် {count} ခုအထိ သီးခြားဖန်တီးပြီး စီမံနိုင်ပါသည်။',
+  'Staff Name': 'ဝန်ထမ်းအမည်',
+  'Initial Password': 'ကနဦးစကားဝှက်',
+  'Password': 'စကားဝှက်',
+  'Create Staff Account': 'ဝန်ထမ်းအကောင့်ဖန်တီးရန်',
+  'Staff account': 'ဝန်ထမ်းအကောင့်',
+  'Staff management': 'ဝန်ထမ်းစီမံခန့်ခွဲမှု',
+  'Assigned Permissions': 'သတ်မှတ်ထားသောခွင့်ပြုချက်များ',
+  'Last Login': 'နောက်ဆုံးဝင်ရောက်ချိန်',
+  'Created Date': 'ဖန်တီးသည့်ရက်စွဲ',
+  'Never': 'မဝင်ရောက်ရသေးပါ',
+  'Edit Staff Information': 'ဝန်ထမ်းအချက်အလက်ပြင်ဆင်ရန်',
+  'Save Information': 'အချက်အလက်သိမ်းရန်',
+  'New Password': 'စကားဝှက်အသစ်',
+  'Change Password': 'စကားဝှက်ပြောင်းရန်',
+  'Deactivate Account': 'အကောင့်ပိတ်ရန်',
+  'Activate Account': 'အကောင့်ဖွင့်ရန်',
+  'No Staff accounts created. {count} slots are available.': 'ဝန်ထမ်းအကောင့် မဖန်တီးရသေးပါ။ နေရာ {count} ခု ကျန်ရှိပါသည်။',
+  'No Staff accounts created yet.': 'ဝန်ထမ်းအကောင့် မဖန်တီးရသေးပါ။',
+  'Configure Individual Staff Permissions': 'ဝန်ထမ်းတစ်ဦးချင်းစီ၏ ခွင့်ပြုချက်များကို သတ်မှတ်ရန်',
+  'Save Permissions': 'ခွင့်ပြုချက်များသိမ်းရန်',
+  'No Staff accounts are available.': 'ဝန်ထမ်းအကောင့် မရှိသေးပါ။',
+  'Logs are recorded by the server and cannot be edited or deleted by Staff.': 'မှတ်တမ်းများကို ဆာဗာမှ သိမ်းဆည်းထားပြီး ဝန်ထမ်းများက ပြင်ဆင်ခြင်း သို့မဟုတ် ဖျက်ခြင်း မပြုနိုင်ပါ။',
+  'Staff': 'ဝန်ထမ်း',
+  'Date and Time': 'ရက်စွဲနှင့်အချိန်',
+  'Affected Record': 'သက်ဆိုင်သောမှတ်တမ်း',
+  'Activity Details': 'လုပ်ဆောင်ချက်အသေးစိတ်',
+  'No Staff activity has been recorded.': 'ဝန်ထမ်းလုပ်ဆောင်ချက်မှတ်တမ်း မရှိသေးပါ။',
+  'Staff account created.': 'ဝန်ထမ်းအကောင့် ဖန်တီးပြီးပါပြီ။',
+  'Unable to create Staff account.': 'ဝန်ထမ်းအကောင့် ဖန်တီး၍မရပါ။',
+  'Unable to load Staff accounts.': 'ဝန်ထမ်းအကောင့်များကို ဖွင့်၍မရပါ။',
+  'Unable to load Staff activity logs.': 'ဝန်ထမ်းလုပ်ဆောင်ချက်မှတ်တမ်းများကို ဖွင့်၍မရပါ။',
+  'Unable to update Staff account.': 'ဝန်ထမ်းအကောင့်ကို ပြင်ဆင်၍မရပါ။',
+  'Unable to update Staff account status.': 'ဝန်ထမ်းအကောင့်အခြေအနေကို ပြင်ဆင်၍မရပါ။',
+  'Unable to change Staff password.': 'ဝန်ထမ်းစကားဝှက်ကို ပြောင်း၍မရပါ။',
+  'Unable to save Staff permissions.': 'ဝန်ထမ်းခွင့်ပြုချက်များကို သိမ်း၍မရပါ။',
+  'Staff account not found.': 'ဝန်ထမ်းအကောင့်ကို မတွေ့ပါ။',
+  'Update only the Staff name, username, or account status here.': 'ဤနေရာတွင် ဝန်ထမ်းအမည်၊ အသုံးပြုသူအမည် သို့မဟုတ် အကောင့်အခြေအနေကိုသာ ပြင်ဆင်နိုင်ပါသည်။',
+  'Enter a valid name, username, and active status.': 'မှန်ကန်သောအမည်၊ အသုံးပြုသူအမည်နှင့် အကောင့်အခြေအနေကို ထည့်ပါ။',
+  'Enter your Staff username and password.': 'ဝန်ထမ်းအသုံးပြုသူအမည်နှင့် စကားဝှက်ကို ထည့်ပါ။',
+  'Staff information updated.': 'ဝန်ထမ်းအချက်အလက်ကို ပြင်ဆင်ပြီးပါပြီ။',
+  'Staff account deactivated.': 'ဝန်ထမ်းအကောင့်ကို ပိတ်လိုက်ပါပြီ။',
+  'Staff account activated.': 'ဝန်ထမ်းအကောင့်ကို ဖွင့်လိုက်ပါပြီ။',
+  'Staff password changed; existing Staff sessions were revoked.': 'ဝန်ထမ်းစကားဝှက်ကို ပြောင်းပြီးပါပြီ။ လက်ရှိဝင်ရောက်မှုများကို ပိတ်သိမ်းလိုက်ပါပြီ။',
+  'Permissions saved; existing Staff sessions were revoked.': 'ခွင့်ပြုချက်များကို သိမ်းပြီးပါပြီ။ လက်ရှိဝင်ရောက်မှုများကို ပိတ်သိမ်းလိုက်ပါပြီ။',
+  'Passwords are stored as salted scrypt hashes. The account starts with no permissions.': 'စကားဝှက်များကို ဆားလ်ထည့်ထားသော scrypt hash ပုံစံဖြင့်သာ သိမ်းဆည်းပါသည်။ အကောင့်အသစ်တွင် ခွင့်ပြုချက်များ မပါဝင်ပါ။',
+  'Enter a name, a username of 3-32 letters/numbers/._-, and a password of 12-256 characters.': 'အမည်၊ အက္ခရာ/နံပါတ်/._- ၃ မှ ၃၂ လုံးရှိသော အသုံးပြုသူအမည်နှင့် အက္ခရာ ၁၂ မှ ၂၅၆ လုံးရှိသော စကားဝှက်ကို ထည့်ပါ။',
+  'The two Staff account slots are already in use.': 'ဝန်ထမ်းအကောင့်နေရာ ၂ ခုလုံး အသုံးပြုပြီးပါပြီ။',
+  'That Staff username is already in use.': 'ဤဝန်ထမ်းအသုံးပြုသူအမည်ကို အသုံးပြုပြီးဖြစ်သည်။',
+  'Staff passwords must be 12-256 characters.': 'ဝန်ထမ်းစကားဝှက်သည် အက္ခရာ ၁၂ မှ ၂၅၆ လုံးအထိ ရှိရပါမည်။',
+  'Enter a name, username, and active status.': 'အမည်၊ အသုံးပြုသူအမည်နှင့် အကောင့်အခြေအနေကို ထည့်ပါ။',
+  'Permissions must be a unique list of valid Staff permission keys.': 'ခွင့်ပြုချက်စာရင်းတွင် မှန်ကန်ပြီး ထပ်မနေသော ဝန်ထမ်းခွင့်ပြုချက်များကိုသာ ထည့်ပါ။',
+  'Owner access is required.': 'ပိုင်ရှင်၏ ဝင်ရောက်ခွင့် လိုအပ်ပါသည်။',
+  'You do not have permission to perform this action.': 'ဤလုပ်ဆောင်ချက်ကို လုပ်ဆောင်ရန် ခွင့်ပြုချက်မရှိပါ။',
+  'This feature is available to the Owner only.': 'ဤလုပ်ဆောင်ချက်ကို ပိုင်ရှင်သာ အသုံးပြုနိုင်ပါသည်။',
+  'Staff Dashboard': 'ဝန်ထမ်းဒက်ရှ်ဘုတ်',
+  'ADMIN DASHBOARD ACCESS': 'စီမံခန့်ခွဲမှုဒက်ရှ်ဘုတ် ဝင်ရောက်ခွင့်',
+  'Sign in with your Owner or Staff Gmail and password.': 'ဆိုင်ရှင် သို့မဟုတ် ဝန်ထမ်း Gmail နှင့် စကားဝှက်ဖြင့် ဝင်ရောက်ပါ။',
+  'Operational overview based on your assigned permissions.': 'သတ်မှတ်ထားသော ခွင့်ပြုချက်များအပေါ် အခြေခံသည့် လုပ်ငန်းဆောင်ရွက်မှုအကျဉ်းချုပ်။',
+  'Assigned Access': 'သတ်မှတ်ထားသော ဝင်ရောက်ခွင့်များ',
+  'Your available dashboard sections are shown in the sidebar.': 'သင်အသုံးပြုခွင့်ရှိသော ဒက်ရှ်ဘုတ်အပိုင်းများကို ဘေးမီနူးတွင် ပြထားပါသည်။',
+  'No dashboard data is available for your current permissions.': 'လက်ရှိခွင့်ပြုချက်များအတွက် ဒက်ရှ်ဘုတ်အချက်အလက် မရှိပါ။',
+  'Low Stock': 'လက်ကျန်နည်းနေသောပစ္စည်းများ',
+  'Gmail': 'Gmail အီးမေးလ်',
+  'Staff Username': 'ဝန်ထမ်းအသုံးပြုသူအမည်',
+  'Staff Password': 'ဝန်ထမ်းစကားဝှက်',
+  'STAFF DASHBOARD ACCESS': 'ဝန်ထမ်းဒက်ရှ်ဘုတ်ဝင်ရောက်ခွင့်',
+  'Sign in with your Staff username and password.': 'ဝန်ထမ်းအသုံးပြုသူအမည်နှင့် စကားဝှက်ဖြင့် ဝင်ရောက်ပါ။',
+  'Staff username or password is incorrect.': 'ဝန်ထမ်းအသုံးပြုသူအမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။',
+  'Staff signed in.': 'ဝန်ထမ်းအကောင့်သို့ ဝင်ရောက်ခဲ့သည်။',
+  'Staff signed out.': 'ဝန်ထမ်းအကောင့်မှ ထွက်ခဲ့သည်။',
+  'Added product': 'ကုန်ပစ္စည်းထည့်သွင်းခြင်း',
+  'Updated product': 'ကုန်ပစ္စည်းပြင်ဆင်ခြင်း',
+  'Deleted product': 'ကုန်ပစ္စည်းဖျက်ခြင်း',
+  'Added customer': 'ဖောက်သည်ထည့်သွင်းခြင်း',
+  'Updated customer': 'ဖောက်သည်အချက်အလက်ပြင်ဆင်ခြင်း',
+  'Deleted customer': 'ဖောက်သည်ဖျက်ခြင်း',
+  'Added category': 'ကုန်ပစ္စည်းအမျိုးအစားထည့်သွင်းခြင်း',
+  'Updated category': 'ကုန်ပစ္စည်းအမျိုးအစားပြင်ဆင်ခြင်း',
+  'Deleted category': 'ကုန်ပစ္စည်းအမျိုးအစားဖျက်ခြင်း',
+  'Recorded Stock In': 'လက်ကျန်ပစ္စည်းအဝင်မှတ်တမ်းတင်ခြင်း',
+  'Recorded Stock Out': 'လက်ကျန်ပစ္စည်းအထွက်မှတ်တမ်းတင်ခြင်း',
+  'Recorded Adjustment': 'လက်ကျန်ပစ္စည်းပြင်ဆင်မှုမှတ်တမ်းတင်ခြင်း',
+  'Recorded Return': 'ပစ္စည်းပြန်အပ်မှုမှတ်တမ်းတင်ခြင်း',
+  'Recorded Damaged': 'ပစ္စည်းပျက်စီးမှုမှတ်တမ်းတင်ခြင်း',
 }
 
-export function getAdminLanguage() {
+export function getAdminLanguage(defaultLanguage = 'en') {
   try {
-    return window.localStorage.getItem(ADMIN_LANGUAGE_KEY) === 'my' ? 'my' : 'en'
+    const savedLanguage = window.localStorage.getItem(ADMIN_LANGUAGE_KEY)
+    if (savedLanguage === 'my' || savedLanguage === 'en') return savedLanguage
+    return defaultLanguage === 'my' ? 'my' : 'en'
   } catch {
-    return 'en'
+    return defaultLanguage === 'my' ? 'my' : 'en'
+  }
+}
+
+export function hasAdminLanguagePreference() {
+  try {
+    const savedLanguage = window.localStorage.getItem(ADMIN_LANGUAGE_KEY)
+    return savedLanguage === 'my' || savedLanguage === 'en'
+  } catch {
+    return false
   }
 }
 
@@ -838,7 +969,23 @@ export function adminT(value, language = getAdminLanguage()) {
   if (typeof value !== 'string' || language !== 'my') return value
   if (MYANMAR[value]) return MYANMAR[value]
 
-  let match = value.match(/^Banner (.*?) is now (Active|Inactive)$/)
+  let match = value.match(/^Confirmed order (.+) to (.+)\.$/)
+  if (match) return `အော်ဒါ ${match[1]} ကို ${adminT(match[2], language)} အဖြစ် အတည်ပြုလိုက်ပါပြီ။`
+  match = value.match(/^Cancelled order (.+) to (.+)\.$/)
+  if (match) return `အော်ဒါ ${match[1]} ကို ပယ်ဖျက်လိုက်ပါပြီ။`
+  match = value.match(/^Changed status of order (.+) to (.+)\.$/)
+  if (match) return `အော်ဒါ ${match[1]} ၏ အခြေအနေကို ${adminT(match[2], language)} သို့ ပြောင်းလိုက်ပါပြီ။`
+  match = value.match(/^Updated shipping for order (.+)\.$/)
+  if (match) return `အော်ဒါ ${match[1]} ၏ ပို့ဆောင်ရေးအချက်အလက်ကို ပြင်ဆင်ပြီးပါပြီ။`
+  match = value.match(/^Recorded (Stock In|Stock Out|Adjustment|Return|Damaged) of (.+) for (.+)\.$/)
+  if (match) return `${match[3]} အတွက် ${adminT(match[1], language)} ${match[2]} ခုကို မှတ်တမ်းတင်ပြီးပါပြီ။`
+  match = value.match(/^(Added|Updated|Deleted) (product|customer|category|subcategory):? ?(.+)\.?$/)
+  if (match) {
+    const verbs = { Added: 'ထည့်သွင်းပြီးပါပြီ', Updated: 'ပြင်ဆင်ပြီးပါပြီ', Deleted: 'ဖျက်ပြီးပါပြီ' }
+    const nouns = { product: 'ကုန်ပစ္စည်း', customer: 'ဖောက်သည်', category: 'အမျိုးအစား', subcategory: 'အမျိုးအစားခွဲ' }
+    return `${nouns[match[2]]} ${match[3]} ကို ${verbs[match[1]]}။`
+  }
+  match = value.match(/^Banner (.*?) is now (Active|Inactive)$/)
   if (match) return `ဘန်နာ ${match[1]} ကို ${adminT(match[2], language)} အဖြစ် သတ်မှတ်လိုက်ပါပြီ။`
   match = value.match(/^Category "(.+)" is now (Enabled|Disabled)$/)
   if (match) return `“${match[1]}” အမျိုးအစားကို ${adminT(match[2], language)} လုပ်လိုက်ပါပြီ။`

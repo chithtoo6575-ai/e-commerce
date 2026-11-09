@@ -5,6 +5,8 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import nodemailer from 'nodemailer'
+import { STAFF_PERMISSION_KEYS, normalizeStaffPermissions } from './shared/adminPermissions.js'
+import { backupBeforePendingMigrations } from './shared/sqliteBackup.js'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const envFile = path.join(root, '.env')
@@ -17,6 +19,9 @@ const databaseFile = process.env.SHOP_DATABASE_FILE ? path.resolve(process.env.S
 if (databaseFile === dataFile) throw new Error('SHOP_DATABASE_FILE must not point to the legacy SHOP_DATA_FILE.')
 fs.mkdirSync(path.dirname(databaseFile), { recursive: true })
 const shopDatabase = new DatabaseSync(databaseFile)
+shopDatabase.exec('PRAGMA busy_timeout = 5000;')
+const migrationBackup = backupBeforePendingMigrations(shopDatabase, databaseFile, [1, 2, 3])
+if (migrationBackup) console.info(`[database] Pre-migration backup saved to ${migrationBackup}`)
 shopDatabase.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;')
 shopDatabase.exec(`\n  CREATE TABLE IF NOT EXISTS shop_state (\n    id INTEGER PRIMARY KEY CHECK (id = 1),\n    revision INTEGER NOT NULL,\n    payload TEXT NOT NULL,\n    updated_at TEXT NOT NULL\n  );\n  CREATE TABLE IF NOT EXISTS schema_migrations (\n    version INTEGER PRIMARY KEY,\n    applied_at TEXT NOT NULL\n  );\n`)
 shopDatabase.exec(`
@@ -36,6 +41,7 @@ const uploadsDir = path.join(root, 'public', 'uploads')
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
 const port = Number(process.env.API_PORT || 8787)
 const sessions = new Map()
+const adminTabSessions = new Map()
 const secureCookie = process.env.NODE_ENV === 'production' ? '; Secure' : ''
 const customerCookie = 'hto_customer_session'
 const sessionSecret = process.env.SESSION_SECRET || process.env.AUTH_SECRET || ''
@@ -65,8 +71,11 @@ const DEFAULT_BANNERS = [
   }
 ]
 const PROMOTION_TYPES = ['percentage', 'fixed']
+const STAFF_SESSION_COOKIE = 'hto_staff_session'
 const oauthTransactions = new Map()
 const dataRevisions = new WeakMap()
+const pendingStaffActivity = new WeakMap()
+const loginFailures = new Map()
 
 function normalizeShopData(data) {
   const base = { orders: [], addresses: [], products: [], customers: [], promotions: [], categories: DEFAULT_CATEGORIES, subCategories: [], banners: DEFAULT_BANNERS, homeSections: [], homeLayout: [], shippingRates: [], deliveryCompanies: [], notifications: [], helpItems: [], storefrontSettingsInitialized: false, notificationReads: {}, orderChats: [], stockMovements: [], guestOrderAccess: {}, activityLog: [], processedTelegramUpdates: [], telegramOrderMessages: {}, telegramOrderNotifications: {}, orderIdempotency: [], authChallenges: {}, authRateLimits: {}, supportChannels: [] }
@@ -195,6 +204,45 @@ function migrateCustomerAddresses() {
 }
 migrateCustomerAddresses()
 
+function migrateStaffAccounts() {
+  const migration = shopDatabase.prepare('SELECT version FROM schema_migrations WHERE version = 3').get()
+  if (migration) return
+  const migratedAt = new Date().toISOString()
+  shopDatabase.exec('BEGIN IMMEDIATE')
+  try {
+    shopDatabase.exec(`
+      CREATE TABLE IF NOT EXISTS staff_accounts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        permissions TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(permissions)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_login_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS staff_activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_id TEXT NOT NULL REFERENCES staff_accounts(id) ON DELETE RESTRICT,
+        action TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        affected_record TEXT NOT NULL DEFAULT '',
+        details TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS staff_activity_logs_staff_idx
+        ON staff_activity_logs(staff_id, occurred_at DESC);
+    `)
+    shopDatabase.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)').run(migratedAt)
+    shopDatabase.exec('COMMIT')
+  } catch (migrationError) {
+    shopDatabase.exec('ROLLBACK')
+    throw new Error(`Could not create Staff account tables. ${migrationError.message}`)
+  }
+}
+migrateStaffAccounts()
+
 function readData() {
   const row = shopDatabase.prepare('SELECT revision, payload FROM shop_state WHERE id = 1').get()
   if (!row) throw new Error('Persistent shop database is missing its state record.')
@@ -237,12 +285,21 @@ function writeData(data) {
       }
       insertAddress.run(address.id, address.customerId, JSON.stringify(address), address.createdAt || updatedAt, address.updatedAt || updatedAt)
     }
+    const pendingActivity = pendingStaffActivity.get(data) || []
+    const insertActivity = shopDatabase.prepare(`
+      INSERT INTO staff_activity_logs (staff_id, action, occurred_at, affected_record, details)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    for (const activity of pendingActivity) {
+      insertActivity.run(activity.staffId, activity.action, activity.occurredAt, activity.affectedRecord, activity.details)
+    }
     shopDatabase.exec('COMMIT')
   } catch (writeError) {
     shopDatabase.exec('ROLLBACK')
     throw writeError
   }
   dataRevisions.set(data, expectedRevision + 1)
+  pendingStaffActivity.delete(data)
 }
 function readPayments() {
   try { return JSON.parse(fs.readFileSync(paymentsFile, 'utf8')) } catch { return {} }
@@ -289,12 +346,75 @@ function cookieValue(request, name) {
   const match = (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
   return match ? match.slice(name.length + 1) : undefined
 }
+function staffAccountById(id) {
+  if (!id) return null
+  const row = shopDatabase.prepare(`
+    SELECT id, username, name, salt, password_hash, active, permissions, created_at, updated_at, last_login_at
+    FROM staff_accounts WHERE id = ?
+  `).get(id)
+  if (!row) return null
+  let permissions
+  try {
+    permissions = normalizeStaffPermissions(JSON.parse(row.permissions))
+  } catch (error) {
+    throw new Error(`Staff account ${row.id} has invalid stored permissions. ${error.message}`)
+  }
+  return {
+    id: row.id,
+    username: row.username,
+    email: row.username,
+    name: row.name,
+    salt: row.salt,
+    passwordHash: row.password_hash,
+    active: row.active === 1,
+    permissions,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastLoginAt: row.last_login_at
+  }
+}
+function adminTabId(request) {
+  const value = String(request.headers['x-admin-tab'] || '').trim()
+  return /^[A-Za-z0-9._-]{16,128}$/.test(value) ? value : ''
+}
+function forgetAdminToken(token) {
+  if (!token) return
+  sessions.delete(token)
+  for (const [tabId, mappedToken] of adminTabSessions) {
+    if (mappedToken === token) adminTabSessions.delete(tabId)
+  }
+}
 function adminSession(request) {
-  const token = cookieValue(request, 'hto_admin_session')
-  const session = token && sessions.get(token)
-  if (session?.type !== 'admin') return null
-  if (session.expiresAt <= Date.now()) { sessions.delete(token); return null }
-  return session
+  const tabId = adminTabId(request)
+  const mappedToken = tabId ? adminTabSessions.get(tabId) : ''
+  const candidates = tabId
+    ? (mappedToken ? [{ token: mappedToken }] : [])
+    : [
+        { token: cookieValue(request, 'hto_admin_session'), cookieName: 'hto_admin_session' },
+        { token: cookieValue(request, STAFF_SESSION_COOKIE), cookieName: STAFF_SESSION_COOKIE }
+      ]
+  for (const candidate of candidates) {
+    const token = candidate.token
+    const session = token && sessions.get(token)
+    if (!session || (session.type !== 'owner' && session.type !== 'admin' && session.type !== 'staff')) {
+      if (tabId && mappedToken === token) adminTabSessions.delete(tabId)
+      continue
+    }
+    if (session.expiresAt <= Date.now()) {
+      forgetAdminToken(token)
+      continue
+    }
+    if (session.type === 'staff') {
+      const account = staffAccountById(session.staffId)
+      if (!account?.active) {
+        forgetAdminToken(token)
+        continue
+      }
+      return { ...session, role: 'staff', token, cookieName: candidate.cookieName || STAFF_SESSION_COOKIE, account }
+    }
+    return { ...session, role: 'owner', token, cookieName: candidate.cookieName || 'hto_admin_session' }
+  }
+  return null
 }
 function customerSession(request) {
   const token = cookieValue(request, customerCookie)
@@ -788,14 +908,108 @@ function passwordMatches(value) {
   const actual = Buffer.from(hashPassword(value, adminAccount.salt), 'hex')
   return expected.length === actual.length && crypto.timingSafeEqual(actual, expected)
 }
+function passwordHashMatches(value, salt, hash) {
+  if (typeof value !== 'string' || typeof salt !== 'string' || typeof hash !== 'string') return false
+  const expected = Buffer.from(hash, 'hex')
+  const actual = Buffer.from(hashPassword(value, salt), 'hex')
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected)
+}
 function adminOnly(request, response) {
   const session = adminSession(request)
   if (!session) { send(response, 401, { error: 'Admin authentication required.' }); return null }
   return session
 }
+function ownerOnly(request, response) {
+  const session = adminOnly(request, response)
+  if (!session || session.role !== 'owner') {
+    if (session) send(response, 403, { error: 'Owner access is required.' })
+    return null
+  }
+  return session
+}
+function requireStaffPermission(request, response, permission) {
+  const session = adminOnly(request, response)
+  if (!session) return null
+  if (session.role === 'staff' && !session.account.permissions.includes(permission)) {
+    send(response, 403, { error: 'You do not have permission to perform this action.' })
+    return null
+  }
+  return session
+}
+function staffPermissionFor(request) {
+  const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`)
+  const method = request.method
+  if (pathname === '/api/admin/session' || pathname === '/api/admin/dashboard' || pathname === '/api/admin/storefront-settings') return null
+  if (pathname === '/api/admin/products' || /^\/api\/admin\/products\/[^/]+$/.test(pathname)) {
+    if (method === 'GET') return 'products.view'
+    if (method === 'POST') return 'products.add'
+    if (method === 'PATCH') return 'products.edit'
+    if (method === 'DELETE') return 'products.delete'
+  }
+  if (pathname === '/api/admin/categories' || pathname.startsWith('/api/admin/categories/')) return 'categories.manage'
+  if (pathname === '/api/admin/sub-categories' || pathname.startsWith('/api/admin/sub-categories/')) return 'subcategories.manage'
+  if (pathname === '/api/admin/stock-movements') return method === 'GET' ? 'stock.view' : method === 'POST' ? 'stock.update' : undefined
+  if (pathname === '/api/admin/banners' || pathname.startsWith('/api/admin/banners/')) return 'storefront.banners'
+  if (pathname === '/api/admin/orders') return method === 'GET' ? ['orders.view', 'orders.details'] : undefined
+  if (/^\/api\/admin\/orders\/[^/]+$/.test(pathname)) {
+    if (method === 'GET') return 'orders.details'
+    if (method === 'PATCH') return ['orders.view', 'orders.details', 'orders.confirm', 'orders.status', 'orders.cancel', 'shipping.manage']
+    return undefined
+  }
+  if (pathname === '/api/admin/order-chat' || /^\/api\/admin\/orders\/[^/]+\/chat(?:\/messages|\/read)?$/.test(pathname)) return 'customers.support'
+  if (pathname === '/api/admin/support-channels' || pathname === '/api/admin/help-items') return 'customers.support'
+  if (/^\/api\/admin\/customers\/[^/]+\/status$/.test(pathname)) return 'customers.edit'
+  if (pathname.startsWith('/api/admin/customers')) return 'customers.view'
+  if (pathname === '/api/admin/upload') {
+    const purpose = searchParams.get('purpose')
+    if (purpose === 'product') return 'products.add'
+    if (purpose === 'product-edit') return 'products.edit'
+    if (purpose === 'category') return 'categories.manage'
+    if (purpose === 'banner') return 'storefront.banners'
+  }
+  return undefined
+}
+function queueStaffActivity(session, action, affectedRecord = '', details = '') {
+  if (session?.role !== 'staff') return
+  shopDatabase.prepare(`
+    INSERT INTO staff_activity_logs (staff_id, action, occurred_at, affected_record, details)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(session.staffId, action, new Date().toISOString(), String(affectedRecord || '').slice(0, 200), String(details || '').slice(0, 1000))
+}
+function loginFailureKey(request, username) {
+  return `${request.socket.remoteAddress || 'unknown'}:${String(username || '').trim().toLowerCase()}`
+}
+function loginIsLimited(key) {
+  const entry = loginFailures.get(key)
+  if (!entry || entry.until <= Date.now()) {
+    loginFailures.delete(key)
+    return false
+  }
+  return entry.count >= 8
+}
+function recordLoginFailure(key) {
+  const entry = loginFailures.get(key)
+  if (!entry || entry.until <= Date.now()) {
+    loginFailures.set(key, { count: 1, until: Date.now() + 15 * 60 * 1000 })
+  } else {
+    entry.count += 1
+    if (entry.count >= 8) entry.until = Date.now() + 15 * 60 * 1000
+  }
+}
 function auditAdminAction(data, request, message) {
   const session = adminSession(request)
   data.activityLog = [{ id: crypto.randomUUID(), at: new Date().toISOString(), actor: session?.email || 'Admin', message }, ...(data.activityLog || [])].slice(0, 100)
+  if (session?.role === 'staff') {
+    const pending = pendingStaffActivity.get(data) || []
+    pending.push({
+      staffId: session.staffId,
+      action: String(message).split(':')[0].slice(0, 120),
+      occurredAt: new Date().toISOString(),
+      affectedRecord: String(message).split(':').slice(1).join(':').trim().slice(0, 200),
+      details: String(message).slice(0, 1000)
+    })
+    pendingStaffActivity.set(data, pending)
+  }
 }
 function summary(orders) {
   const active = orders.filter((order) => order.status !== 'Cancelled')
@@ -811,6 +1025,89 @@ function summary(orders) {
   const totalSales = salesFor(active)
   const yesterdayActive = yesterdayOrders.filter((order) => order.status !== 'Cancelled')
   return { totalOrders: orders.length, todayOrders: todayOrders.length, todaySales: salesFor(todayOrders), yesterdaySales: salesFor(yesterdayOrders), todayFulfilled, yesterdayFulfilled, averageOrderValue: active.length ? totalSales / active.length : 0, yesterdayAverageOrderValue: yesterdayActive.length ? salesFor(yesterdayActive) / yesterdayActive.length : 0, todayUnfulfilled: todayOrders.filter((order) => !['Delivered', 'Cancelled'].includes(order.status)).length, todayPacking: todayOrders.filter((order) => order.status === 'Packing').length, new: orders.filter((order) => order.status === 'New').length, pending: orders.filter((order) => ['New', 'Confirmed', 'Packing', 'Shipped'].includes(order.status)).length, pendingPayment: orders.filter((order) => order.paymentStatus === 'Pending Verification').length, confirmed: orders.filter((order) => order.status === 'Confirmed').length, packing: orders.filter((order) => order.status === 'Packing').length, shipped: orders.filter((order) => order.status === 'Shipped').length, delivered: orders.filter((order) => order.status === 'Delivered').length, completed: orders.filter((order) => order.status === 'Delivered').length, cancelled: orders.filter((order) => order.status === 'Cancelled').length, totalSales }
+}
+function staffSafeOrder(order, includeDetails) {
+  const omit = new Set([
+    'total', 'subtotal', 'deliveryFee', 'delivery_fee', 'shippingFee', 'shipping_fee',
+    'discount', 'price', 'unitPrice', 'unit_price', 'lineTotal', 'line_total',
+    'paymentStatus', 'paymentVerificationStatus', 'paymentMethod', 'paymentDetails',
+    'paymentSlip', 'paymentProof', 'paymentRejectionReason', 'paymentUpdatedAt', 'paymentVerifiedAt',
+    'receipt', 'transactionId', 'referenceId'
+  ])
+  const strip = (value) => {
+    if (Array.isArray(value)) return value.map(strip)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).filter(([key]) => !omit.has(key) && !/(total|subtotal|sales|revenue|profit|price|amount|discount|payment|fee|commission|cost)/i.test(key)).map(([key, child]) => [key, strip(child)]))
+  }
+  if (includeDetails) return strip(order)
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber || order.id,
+    status: order.status,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    customer: { name: order.customer?.name || '' },
+    itemCount: (order.items || []).reduce((count, item) => count + Number(item.quantity || 0), 0)
+  }
+}
+function staffSafeProduct(product) {
+  const strip = (value) => {
+    if (Array.isArray(value)) return value.map(strip)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !/(cost|profit|margin)/i.test(key))
+      .map(([key, child]) => [key, strip(child)]))
+  }
+  return strip(product)
+}
+function hasOwnerProductFields(value) {
+  if (Array.isArray(value)) return value.some(hasOwnerProductFields)
+  if (!value || typeof value !== 'object') return false
+  return Object.entries(value).some(([key, child]) => /(cost|profit|margin)/i.test(key) || hasOwnerProductFields(child))
+}
+function staffDashboardPayload(data, permissions) {
+  const canViewOrders = permissions.includes('orders.view') || permissions.includes('orders.details')
+  const canViewOrderDetails = permissions.includes('orders.details')
+  const orders = canViewOrders ? data.orders.map((order) => staffSafeOrder(order, canViewOrderDetails)) : []
+  const products = permissions.includes('products.view')
+    ? data.products.map(staffSafeProduct)
+    : permissions.includes('stock.view')
+      ? data.products.map(({ id, name, nameEn, sku, stock, variantStock, enabled, image }) => ({ id, name, nameEn, sku, stock, variantStock, enabled, image }))
+      : []
+  const visibleOrders = canViewOrders ? data.orders : []
+  const statuses = {
+    totalOrders: visibleOrders.length,
+    new: visibleOrders.filter((order) => order.status === 'New').length,
+    pending: visibleOrders.filter((order) => ['New', 'Pending', 'Confirmed', 'Packing', 'Shipped'].includes(order.status)).length,
+    confirmed: visibleOrders.filter((order) => order.status === 'Confirmed').length,
+    packing: visibleOrders.filter((order) => order.status === 'Packing').length,
+    shipped: visibleOrders.filter((order) => order.status === 'Shipped').length,
+    delivered: visibleOrders.filter((order) => order.status === 'Delivered').length,
+    cancelled: visibleOrders.filter((order) => order.status === 'Cancelled').length
+  }
+  const customers = permissions.includes('customers.view')
+    ? data.customers.map((customer) => {
+      const { totalPurchase: _totalPurchase, ...safeCustomer } = adminCustomerSummary(customer, data.orders)
+      return safeCustomer
+    })
+    : []
+  return {
+    summary: {
+      ...statuses,
+      lowStock: permissions.includes('stock.view') || permissions.includes('products.view')
+        ? data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length
+        : 0,
+      outOfStock: permissions.includes('stock.view') || permissions.includes('products.view')
+        ? data.products.filter((product) => product.stock === 0 && product.enabled !== false).length
+        : 0
+    },
+    orders,
+    products,
+    categories: permissions.includes('products.view') || permissions.includes('categories.manage') ? data.categories : [],
+    subCategories: permissions.includes('products.view') || permissions.includes('subcategories.manage') ? data.subCategories : [],
+    customers,
+    stockMovements: permissions.includes('stock.view') ? data.stockMovements : []
+  }
 }
 function cleanPromotion(input, existing = {}) {
   const promotion = { ...existing, ...input, id: existing.id || input.id || crypto.randomUUID() }
@@ -1110,8 +1407,9 @@ function orderChatUnreadCount(chat, viewerRole) {
   if (!chat) return 0
   return (chat.messages || []).filter((message) => message.senderRole !== viewerRole && !message.readBy?.[viewerRole]).length
 }
-function getOrderChatPayload(chat, order) {
-  const safeChat = { ...chat, orderNumber: order?.orderNumber || order?.id || chat?.orderNumber, order: { id: order?.id, orderNumber: order?.orderNumber || order?.id, customer: order?.customer || null, items: order?.items || [] }, messages: (chat?.messages || []).map((message) => ({
+function getOrderChatPayload(chat, order, hideFinancialData = false) {
+  const safeOrder = hideFinancialData && order ? staffSafeOrder(order, true) : order
+  const safeChat = { ...chat, orderNumber: order?.orderNumber || order?.id || chat?.orderNumber, order: { id: safeOrder?.id, orderNumber: safeOrder?.orderNumber || safeOrder?.id, customer: safeOrder?.customer || null, items: safeOrder?.items || [] }, messages: (chat?.messages || []).map((message) => ({
     id: message.id,
     orderId: message.orderId,
     customerId: message.customerId,
@@ -1515,6 +1813,22 @@ const server = http.createServer(async (request, response) => {
   }
   response.setHeader('Cache-Control', 'no-store')
   try {
+    const adminApi = url.pathname.startsWith('/api/admin/')
+    const authEndpoint = ['/api/admin/login', '/api/admin/logout', '/api/owner/login', '/api/staff/login', '/api/staff/logout'].includes(url.pathname)
+    if (adminApi && !authEndpoint) {
+      const session = adminSession(request)
+      if (!session) return send(response, 401, { error: 'Admin authentication required.' })
+      if (session.role === 'staff') {
+        const permission = staffPermissionFor(request)
+        if (permission === undefined) return send(response, 403, { error: 'This feature is available to the Owner only.' })
+        const hasPermission = Array.isArray(permission)
+          ? permission.some((key) => session.account.permissions.includes(key))
+          : permission && session.account.permissions.includes(permission)
+        if (permission && !hasPermission) {
+          return send(response, 403, { error: 'You do not have permission to perform this action.' })
+        }
+      }
+    }
     if (request.method === 'POST' && url.pathname === '/api/telegram/webhook') {
       const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET
       if (!webhookSecret) return send(response, 503, { error: 'Telegram webhook is not configured.' })
@@ -1633,20 +1947,83 @@ const server = http.createServer(async (request, response) => {
       writeData(data)
       return send(response, 200, { customer: customerSafeProfile(customer) }, { 'Set-Cookie': customerCookieHeader(createCustomerSession(customer)) })
     }
-    if (request.method === 'POST' && url.pathname === '/api/admin/login') {
+    if (request.method === 'POST' && ['/api/admin/login', '/api/owner/login'].includes(url.pathname)) {
       const body = await readBody(request)
       if (!adminAccount) return send(response, 503, { error: 'Admin setup is required on the server.' })
       const email = String(body?.email || '').trim().toLowerCase()
-      if (!email || typeof body?.password !== 'string') return send(response, 400, { error: 'Enter your admin email and password.' })
-      if (email !== adminAccount.email || !passwordMatches(body.password)) return send(response, 401, { error: 'Admin email or password is incorrect.' })
+      if (!email || typeof body?.password !== 'string' || body.password.length > 256) return send(response, 400, { error: 'Enter your admin email and password.' })
+      const key = loginFailureKey(request, email)
+      if (loginIsLimited(key)) return send(response, 429, { error: 'Too many sign-in attempts. Try again in 15 minutes.' })
+      if (email !== adminAccount.email || !passwordMatches(body.password)) {
+        recordLoginFailure(key)
+        return send(response, 401, { error: 'Admin email or password is incorrect.' })
+      }
+      loginFailures.delete(key)
+      const tabId = adminTabId(request)
+      const previousTabToken = tabId ? adminTabSessions.get(tabId) : ''
+      if (previousTabToken) forgetAdminToken(previousTabToken)
+      if (!tabId) {
+        const previousStaffToken = cookieValue(request, STAFF_SESSION_COOKIE)
+        if (previousStaffToken) forgetAdminToken(previousStaffToken)
+        const previousOwnerToken = cookieValue(request, 'hto_admin_session')
+        if (previousOwnerToken) forgetAdminToken(previousOwnerToken)
+      }
       const token = crypto.randomBytes(32).toString('hex')
       const maxAge = 8 * 60 * 60
-      sessions.set(token, { type: 'admin', email: adminAccount.email, createdAt: Date.now(), expiresAt: Date.now() + maxAge * 1000 })
-      return send(response, 200, { admin: { email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' } }, { 'Set-Cookie': `hto_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie}` })
+      sessions.set(token, { type: 'owner', email: adminAccount.email, createdAt: Date.now(), expiresAt: Date.now() + maxAge * 1000 })
+      if (tabId) adminTabSessions.set(tabId, token)
+      const admin = { role: 'owner', email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' }
+      return send(response, 200, { admin }, { 'Set-Cookie': [
+        `hto_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie}`,
+        `${STAFF_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`
+      ] })
     }
-    if (request.method === 'POST' && url.pathname === '/api/admin/logout') {
-      const token = cookieValue(request, 'hto_admin_session'); if (token) sessions.delete(token)
-      return send(response, 200, { ok: true }, { 'Set-Cookie': `hto_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}` })
+    if (request.method === 'POST' && url.pathname === '/api/staff/login') {
+      const body = await readBody(request)
+      const username = normalizeEmail(body?.email || body?.gmail || body?.username)
+      if (!username || typeof body?.password !== 'string') return send(response, 400, { error: 'Enter your Staff username and password.' })
+      const key = loginFailureKey(request, username)
+      if (loginIsLimited(key)) return send(response, 429, { error: 'Too many sign-in attempts. Try again in 15 minutes.' })
+      const row = shopDatabase.prepare('SELECT id FROM staff_accounts WHERE username = ? COLLATE NOCASE').get(username)
+      const account = row && staffAccountById(row.id)
+      if (!account?.active || !passwordHashMatches(body.password, account.salt, account.passwordHash)) {
+        recordLoginFailure(key)
+        return send(response, 401, { error: 'Staff username or password is incorrect.' })
+      }
+      loginFailures.delete(key)
+      const tabId = adminTabId(request)
+      const previousTabToken = tabId ? adminTabSessions.get(tabId) : ''
+      if (previousTabToken) forgetAdminToken(previousTabToken)
+      if (!tabId) {
+        const previousOwnerToken = cookieValue(request, 'hto_admin_session')
+        const previousStaffToken = cookieValue(request, STAFF_SESSION_COOKIE)
+        if (previousOwnerToken) forgetAdminToken(previousOwnerToken)
+        if (previousStaffToken) forgetAdminToken(previousStaffToken)
+      }
+      const token = crypto.randomBytes(32).toString('hex')
+      const maxAge = 8 * 60 * 60
+      const now = new Date().toISOString()
+      shopDatabase.prepare('UPDATE staff_accounts SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, account.id)
+      queueStaffActivity({ role: 'staff', staffId: account.id }, 'login', '', 'Staff signed in.')
+      sessions.set(token, { type: 'staff', staffId: account.id, createdAt: Date.now(), expiresAt: Date.now() + maxAge * 1000 })
+      if (tabId) adminTabSessions.set(tabId, token)
+      return send(response, 200, {
+        admin: { role: 'staff', staffId: account.id, username: account.username, email: account.email || account.username, name: account.name, permissions: account.permissions }
+      }, { 'Set-Cookie': [
+        `${STAFF_SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie}`,
+        `hto_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`
+      ] })
+    }
+    if (request.method === 'POST' && ['/api/admin/logout', '/api/staff/logout'].includes(url.pathname)) {
+      const session = adminSession(request)
+      if (session?.role === 'staff') queueStaffActivity(session, 'logout', '', 'Staff signed out.')
+      if (session?.token) forgetAdminToken(session.token)
+      const tabId = adminTabId(request)
+      if (tabId) adminTabSessions.delete(tabId)
+      return send(response, 200, { ok: true }, { 'Set-Cookie': [
+        `hto_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`,
+        `${STAFF_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`
+      ] })
     }
     if (request.method === 'GET' && url.pathname === '/api/customer/session') {
       const session = customerSession(request); const data = readData(); const customer = session && data.customers.find((item) => item.id === session.customerId)
@@ -2454,7 +2831,157 @@ const server = http.createServer(async (request, response) => {
       chat.updatedAt = new Date().toISOString(); writeData(data)
       return send(response, 200, { ok: true, chat: getOrderChatPayload(chat, order) })
     }
-    if (request.method === 'GET' && url.pathname === '/api/admin/session') return adminOnly(request, response) && send(response, 200, { admin: { email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' } })
+    if (request.method === 'GET' && url.pathname === '/api/admin/staff') {
+      if (!ownerOnly(request, response)) return
+      const staff = shopDatabase.prepare(`
+        SELECT id, username, name, active, permissions, created_at, updated_at, last_login_at
+        FROM staff_accounts ORDER BY created_at ASC
+      `).all().map((row) => ({
+        id: row.id,
+        username: row.username,
+        email: row.username,
+        name: row.name,
+        active: row.active === 1,
+        permissions: normalizeStaffPermissions(JSON.parse(row.permissions)),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        lastLoginAt: row.last_login_at
+      }))
+      return send(response, 200, { staff })
+    }
+    if (request.method === 'POST' && url.pathname === '/api/admin/staff') {
+      const owner = ownerOnly(request, response)
+      if (!owner) return
+      const body = await readBody(request)
+      const name = typeof body.name === 'string' ? body.name.trim() : ''
+      const rawLogin = body.email || body.gmail || body.username
+      const username = typeof rawLogin === 'string' ? rawLogin.trim().toLowerCase() : ''
+      const password = body.password
+      const requestedPermissions = body.permissions === undefined ? [] : body.permissions
+      if (!Array.isArray(requestedPermissions) || requestedPermissions.some((key) => typeof key !== 'string' || !STAFF_PERMISSION_KEYS.includes(key)) || new Set(requestedPermissions).size !== requestedPermissions.length) {
+        return send(response, 400, { error: 'Permissions must be a unique list of valid Staff permission keys.' })
+      }
+      const initialPermissions = normalizeStaffPermissions(requestedPermissions)
+      const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username) && username.length <= 254
+      const validLegacyUsername = /^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)
+      if (!name || name.length > 120 || (!validEmail && !validLegacyUsername) || typeof password !== 'string' || password.length < 12 || password.length > 256) {
+        return send(response, 400, { error: 'Enter a name, a valid Gmail address, and a password of 12-256 characters.' })
+      }
+      if (shopDatabase.prepare('SELECT 1 FROM staff_accounts WHERE username = ? COLLATE NOCASE').get(username)) {
+        return send(response, 409, { error: 'That Staff username is already in use.' })
+      }
+      const id = crypto.randomUUID()
+      const salt = crypto.randomBytes(16).toString('hex')
+      const hash = hashPassword(password, salt)
+      const now = new Date().toISOString()
+      shopDatabase.prepare(`
+        INSERT INTO staff_accounts (id, username, name, salt, password_hash, active, permissions, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+      `).run(id, username, name, salt, hash, JSON.stringify(initialPermissions), now, now)
+      return send(response, 201, {
+        staff: { id, username, email: username, name, active: true, permissions: initialPermissions, createdAt: now, updatedAt: now, lastLoginAt: null }
+      })
+    }
+    const staffAccountMatch = url.pathname.match(/^\/api\/admin\/staff\/([^/]+)(?:\/permissions)?$/)
+    if (staffAccountMatch && !url.pathname.endsWith('/permissions') && request.method === 'DELETE') {
+      if (!ownerOnly(request, response)) return
+      const id = decodeURIComponent(staffAccountMatch[1])
+      if (!staffAccountById(id)) return send(response, 404, { error: 'Staff account not found.' })
+      shopDatabase.exec('BEGIN IMMEDIATE')
+      try {
+        shopDatabase.prepare('DELETE FROM staff_activity_logs WHERE staff_id = ?').run(id)
+        shopDatabase.prepare('DELETE FROM staff_accounts WHERE id = ?').run(id)
+        shopDatabase.exec('COMMIT')
+      } catch (deleteError) {
+        shopDatabase.exec('ROLLBACK')
+        throw deleteError
+      }
+      for (const [token, session] of sessions) if (session.type === 'staff' && session.staffId === id) forgetAdminToken(token)
+      return send(response, 200, { ok: true })
+    }
+    if (staffAccountMatch && request.method === 'PATCH') {
+      if (!ownerOnly(request, response)) return
+      const id = decodeURIComponent(staffAccountMatch[1])
+      const current = staffAccountById(id)
+      if (!current) return send(response, 404, { error: 'Staff account not found.' })
+      const body = await readBody(request)
+      const allowedFields = new Set(['name', 'email', 'username', 'active'])
+      if (Object.keys(body).some((key) => !allowedFields.has(key))) return send(response, 400, { error: 'Update only the Staff name, Gmail, or account status here.' })
+      const name = Object.hasOwn(body, 'name') ? String(body.name).trim() : current.name
+      const loginField = Object.hasOwn(body, 'email') ? body.email : Object.hasOwn(body, 'username') ? body.username : null
+      const username = loginField !== null ? String(loginField).trim().toLowerCase() : current.username
+      const active = Object.hasOwn(body, 'active') ? body.active : current.active
+      const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username) && username.length <= 254
+      const validLegacyUsername = /^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)
+      if (!name || name.length > 120 || (loginField !== null && !validEmail && !validLegacyUsername) || typeof active !== 'boolean') {
+        return send(response, 400, { error: 'Enter a valid name, Gmail, and active status.' })
+      }
+      if (shopDatabase.prepare('SELECT 1 FROM staff_accounts WHERE username = ? COLLATE NOCASE AND id <> ?').get(username, id)) {
+        return send(response, 409, { error: 'That Staff username is already in use.' })
+      }
+      const now = new Date().toISOString()
+      shopDatabase.prepare('UPDATE staff_accounts SET name = ?, username = ?, active = ?, updated_at = ? WHERE id = ?')
+        .run(name, username, active ? 1 : 0, now, id)
+      if (!active || username !== current.username) {
+        for (const [token, session] of sessions) if (session.type === 'staff' && session.staffId === id) forgetAdminToken(token)
+      }
+      const updated = staffAccountById(id)
+      return send(response, 200, { staff: { ...updated, passwordHash: undefined, salt: undefined } })
+    }
+    if (staffAccountMatch && url.pathname.endsWith('/permissions') && request.method === 'PUT') {
+      if (!ownerOnly(request, response)) return
+      const id = decodeURIComponent(url.pathname.split('/')[4])
+      const current = staffAccountById(id)
+      if (!current) return send(response, 404, { error: 'Staff account not found.' })
+      const body = await readBody(request)
+      if (!Array.isArray(body.permissions) || body.permissions.some((key) => typeof key !== 'string' || !STAFF_PERMISSION_KEYS.includes(key)) || new Set(body.permissions).size !== body.permissions.length) {
+        return send(response, 400, { error: 'Permissions must be a unique list of valid Staff permission keys.' })
+      }
+      const permissions = normalizeStaffPermissions(body.permissions)
+      const now = new Date().toISOString()
+      shopDatabase.prepare('UPDATE staff_accounts SET permissions = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(permissions), now, id)
+      for (const [token, session] of sessions) if (session.type === 'staff' && session.staffId === id) forgetAdminToken(token)
+      return send(response, 200, { staff: { id, username: current.username, email: current.email || current.username, name: current.name, active: current.active, permissions, createdAt: current.createdAt, updatedAt: now, lastLoginAt: current.lastLoginAt } })
+    }
+    const staffPasswordMatch = url.pathname.match(/^\/api\/admin\/staff\/([^/]+)\/password$/)
+    if (staffPasswordMatch && request.method === 'POST') {
+      if (!ownerOnly(request, response)) return
+      const id = decodeURIComponent(staffPasswordMatch[1])
+      if (!staffAccountById(id)) return send(response, 404, { error: 'Staff account not found.' })
+      const body = await readBody(request)
+      if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 256) return send(response, 400, { error: 'Staff passwords must be 12-256 characters.' })
+      const salt = crypto.randomBytes(16).toString('hex')
+      const hash = hashPassword(body.password, salt)
+      const now = new Date().toISOString()
+      shopDatabase.prepare('UPDATE staff_accounts SET salt = ?, password_hash = ?, updated_at = ? WHERE id = ?').run(salt, hash, now, id)
+      for (const [token, session] of sessions) if (session.type === 'staff' && session.staffId === id) forgetAdminToken(token)
+      return send(response, 200, { ok: true })
+    }
+    if (request.method === 'GET' && url.pathname === '/api/admin/staff/activity') {
+      if (!ownerOnly(request, response)) return
+      const staffId = new URL(request.url, `http://${request.headers.host}`).searchParams.get('staffId')
+      if (staffId && !staffAccountById(staffId)) return send(response, 404, { error: 'Staff account not found.' })
+      const logs = staffId
+        ? shopDatabase.prepare(`
+          SELECT l.id, l.staff_id AS staffId, a.username, a.name AS staffName, l.action, l.occurred_at AS occurredAt, l.affected_record AS affectedRecord, l.details
+          FROM staff_activity_logs l JOIN staff_accounts a ON a.id = l.staff_id
+          WHERE l.staff_id = ? ORDER BY l.occurred_at DESC, l.id DESC LIMIT 1000
+        `).all(staffId)
+        : shopDatabase.prepare(`
+          SELECT l.id, l.staff_id AS staffId, a.username, a.name AS staffName, l.action, l.occurred_at AS occurredAt, l.affected_record AS affectedRecord, l.details
+          FROM staff_activity_logs l JOIN staff_accounts a ON a.id = l.staff_id
+          ORDER BY l.occurred_at DESC, l.id DESC LIMIT 1000
+        `).all()
+      return send(response, 200, { logs })
+    }
+    if (request.method === 'GET' && url.pathname === '/api/admin/session') {
+      const session = adminOnly(request, response)
+      if (!session) return
+      const admin = session.role === 'owner'
+        ? { role: 'owner', email: adminAccount.email, languagePreference: adminAccount.languagePreference === 'my' ? 'my' : adminAccount.languagePreference === 'en' ? 'en' : '' }
+        : { role: 'staff', staffId: session.staffId, username: session.account.username, email: session.account.email || session.account.username, name: session.account.name, permissions: session.account.permissions }
+      return send(response, 200, { admin })
+    }
     if (request.method === 'POST' && url.pathname === '/api/admin/preferences') {
       if (!adminOnly(request, response)) return
       const body = await readBody(request)
@@ -2482,7 +3009,8 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { chats })
     }
     if (request.method === 'GET' && url.pathname.startsWith('/api/admin/orders/') && url.pathname.endsWith('/chat')) {
-      if (!adminOnly(request, response)) return
+      const session = requireStaffPermission(request, response, 'customers.support')
+      if (!session) return
       const orderId = url.pathname.split('/')[4]
       const data = readData(); const order = data.orders.find((item) => item.id === orderId || item.orderNumber === orderId)
       if (!order) return send(response, 404, { error: 'Order not found.' })
@@ -2494,10 +3022,12 @@ const server = http.createServer(async (request, response) => {
       })
       chat.messages = adminReadMessages
       chat.updatedAt = new Date().toISOString(); writeData(data)
-      return send(response, 200, { order: { id: order.id, orderNumber: order.orderNumber || order.id, customer: order.customer, items: order.items || [] }, chat: getOrderChatPayload(chat, order), unreadCount: 0 })
+      const chatOrder = { id: order.id, orderNumber: order.orderNumber || order.id, customer: order.customer, items: order.items || [] }
+      return send(response, 200, { order: session.role === 'staff' ? staffSafeOrder(chatOrder, true) : chatOrder, chat: getOrderChatPayload(chat, order, session.role === 'staff'), unreadCount: 0 })
     }
     if (request.method === 'POST' && url.pathname.startsWith('/api/admin/orders/') && url.pathname.endsWith('/chat/messages')) {
-      if (!adminOnly(request, response)) return
+      const session = requireStaffPermission(request, response, 'customers.support')
+      if (!session) return
       const orderId = url.pathname.split('/')[4]
       const body = await readBody(request)
       const data = readData(); const order = data.orders.find((item) => item.id === orderId || item.orderNumber === orderId)
@@ -2509,10 +3039,11 @@ const server = http.createServer(async (request, response) => {
       chat.messages = [...(chat.messages || []), message]
       chat.updatedAt = message.createdAt
       writeData(data)
-      return send(response, 201, { chat: getOrderChatPayload(chat, order), message })
+      return send(response, 201, { chat: getOrderChatPayload(chat, order, session.role === 'staff'), message })
     }
     if (request.method === 'POST' && url.pathname.startsWith('/api/admin/orders/') && url.pathname.endsWith('/chat/read')) {
-      if (!adminOnly(request, response)) return
+      const session = requireStaffPermission(request, response, 'customers.support')
+      if (!session) return
       const orderId = url.pathname.split('/')[4]
       const data = readData(); const order = data.orders.find((item) => item.id === orderId || item.orderNumber === orderId)
       if (!order) return send(response, 404, { error: 'Order not found.' })
@@ -2524,7 +3055,7 @@ const server = http.createServer(async (request, response) => {
         return message
       })
       chat.updatedAt = new Date().toISOString(); writeData(data)
-      return send(response, 200, { ok: true, chat: getOrderChatPayload(chat, order) })
+      return send(response, 200, { ok: true, chat: getOrderChatPayload(chat, order, session.role === 'staff') })
     }
     if (url.pathname === '/api/admin/support-channels') {
       if (!adminOnly(request, response)) return
@@ -2775,7 +3306,7 @@ const server = http.createServer(async (request, response) => {
       data.stockMovements = [movement, ...data.stockMovements].slice(0, 1000)
       auditAdminAction(data, request, `Recorded ${type} of ${Math.abs(quantity)} for ${movement.productName}.`)
       writeData(data)
-      return send(response, 201, { movement, product: updatedProduct })
+      return send(response, 201, { movement, product: admin.role === 'staff' ? staffSafeProduct(updatedProduct) : updatedProduct })
     }
     if (url.pathname.startsWith('/api/admin/')) {
       if (!adminOnly(request, response)) return
@@ -2783,14 +3314,47 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === '/api/admin/storefront-settings') {
         if (request.method === 'GET') {
           const { storefrontSettingsInitialized, ...settings } = data
+          const session = adminSession(request)
+          if (session?.role === 'staff') {
+            const permittedSettings = Object.fromEntries(Object.entries({
+              homeSections: 'storefront.home_sections',
+              homeLayout: 'storefront.home_layout',
+              shippingRates: 'shipping.manage',
+              deliveryCompanies: 'shipping.manage',
+              notifications: 'notifications.view',
+              helpItems: 'customers.support'
+            }).filter(([, permission]) => session.account.permissions.includes(permission))
+              .map(([key]) => [key, settings[key]]))
+            return send(response, 200, { settings: permittedSettings, initialized: storefrontSettingsInitialized })
+          }
           return send(response, 200, { settings, initialized: storefrontSettingsInitialized })
         }
         if (request.method === 'PUT') {
-          const settings = cleanStorefrontSettings(await readBody(request))
-          Object.assign(data, settings, { storefrontSettingsInitialized: true })
+          const body = await readBody(request)
+          const session = adminSession(request)
+          const permittedSettings = {
+            homeSections: 'storefront.home_sections',
+            homeLayout: 'storefront.home_layout',
+            shippingRates: 'shipping.manage',
+            deliveryCompanies: 'shipping.manage',
+            notifications: 'notifications.send',
+            helpItems: 'customers.support'
+          }
+          if (session?.role === 'staff') {
+            const unauthorized = Object.keys(body).find((key) => !permittedSettings[key] || !session.account.permissions.includes(permittedSettings[key]))
+            if (unauthorized) return send(response, 403, { error: 'You do not have permission to change this storefront setting.' })
+          }
+          const settingKeys = ['homeSections', 'homeLayout', 'shippingRates', 'deliveryCompanies', 'notifications', 'helpItems']
+          if (Object.keys(body).some((key) => !settingKeys.includes(key))) return send(response, 400, { error: 'Storefront settings contain an unsupported field.' })
+          const settings = cleanStorefrontSettings({ ...data, ...body })
+          for (const key of Object.keys(body)) data[key] = settings[key]
+          data.storefrontSettingsInitialized = true
           auditAdminAction(data, request, 'Updated storefront, delivery, notification, and help settings.')
           writeData(data)
-          return send(response, 200, { settings, initialized: true })
+          const returnedSettings = session?.role === 'staff'
+            ? Object.fromEntries(Object.keys(permittedSettings).filter((key) => session.account.permissions.includes(permittedSettings[key])).map((key) => [key, data[key]]))
+            : Object.fromEntries(Object.keys(permittedSettings).map((key) => [key, data[key]]))
+          return send(response, 200, { settings: returnedSettings, initialized: true })
         }
       }
       const customerStatusMatch = url.pathname.match(/^\/api\/admin\/customers\/([^/]+)\/status$/)
@@ -2808,9 +3372,15 @@ const server = http.createServer(async (request, response) => {
         }
         auditAdminAction(data, request, `${body.status === 'Suspended' ? 'Suspended' : 'Reactivated'} customer account: ${customer.name || customer.id}.`)
         writeData(data)
-        return send(response, 200, { customer: adminCustomerSummary(customer, data.orders) })
+        const customerSummary = adminCustomerSummary(customer, data.orders)
+        if (adminSession(request)?.role === 'staff') delete customerSummary.totalPurchase
+        return send(response, 200, { customer: customerSummary })
       }
-      if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, subCategories: data.subCategories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [] })
+      if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') {
+        const session = adminSession(request)
+        if (session?.role === 'staff') return send(response, 200, staffDashboardPayload(data, session.account.permissions))
+        return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, subCategories: data.subCategories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [] })
+      }
       if (request.method === 'POST' && url.pathname === '/api/admin/categories') {
         const category = cleanCategory(await readBody(request))
         if (data.categories.some((item) => item.name.toLowerCase() === category.name.toLowerCase())) return send(response, 409, { error: 'A category with that name already exists.' })
@@ -2890,24 +3460,42 @@ const server = http.createServer(async (request, response) => {
         return response.end(backup)
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/products') {
-        const product = cleanProduct(await readBody(request))
+        const body = await readBody(request)
+        const session = adminSession(request)
+        if (session?.role === 'staff') {
+          if (hasOwnerProductFields(body)) return send(response, 403, { error: 'Product cost and profit fields are Owner-only.' })
+          if (!session.account.permissions.includes('stock.update')) {
+            if (Number(body.stock || 0) !== 0 || body.variantStock) return send(response, 403, { error: 'Stock updates require the Update Stock permission.' })
+          }
+        }
+        const product = cleanProduct(body)
         data.products = [product, ...data.products.filter((item) => String(item.id) !== String(product.id))]
         auditAdminAction(data, request, `Added product: ${product.nameEn}.`)
         writeData(data)
-        return send(response, 201, { product })
+        return send(response, 201, { product: session?.role === 'staff' ? staffSafeProduct(product) : product })
       }
       if (url.pathname.startsWith('/api/admin/products/')) {
         const rawId = url.pathname.replace(/^\/api\/admin\/products\//, '').replace(/\/$/, '')
         const id = decodeURIComponent(rawId)
         const current = data.products.find((product) => String(product.id) === String(id))
         if (!current) return send(response, 404, { error: 'Product not found.' })
-        if (request.method === 'GET') return send(response, 200, { product: current })
+        const session = adminSession(request)
+        if (request.method === 'GET') return send(response, 200, { product: session?.role === 'staff' ? staffSafeProduct(current) : current })
         if (request.method === 'PATCH') {
-          const product = cleanProduct(await readBody(request), current)
+          const body = await readBody(request)
+          if (session?.role === 'staff') {
+            if (hasOwnerProductFields(body)) return send(response, 403, { error: 'Product cost and profit fields are Owner-only.' })
+            if (!session.account.permissions.includes('stock.update') &&
+                ((Object.hasOwn(body, 'stock') && Number(body.stock) !== Number(current.stock)) ||
+                (Object.hasOwn(body, 'variantStock') && JSON.stringify(body.variantStock) !== JSON.stringify(current.variantStock)))) {
+              return send(response, 403, { error: 'Stock updates require the Update Stock permission.' })
+            }
+          }
+          const product = cleanProduct(body, current)
           data.products = data.products.map((item) => String(item.id) === String(id) ? product : item)
           auditAdminAction(data, request, `Updated product: ${product.nameEn}.`)
           writeData(data)
-          return send(response, 200, { product })
+          return send(response, 200, { product: session?.role === 'staff' ? staffSafeProduct(product) : product })
         }
         if (request.method === 'DELETE') {
           data.products = data.products.filter((item) => String(item.id) !== String(id))
@@ -2961,6 +3549,19 @@ const server = http.createServer(async (request, response) => {
       }
       if (request.method === 'PATCH' && url.pathname.startsWith('/api/admin/orders/')) {
         const id = url.pathname.split('/').pop(); const body = await readBody(request)
+        const orderSession = adminSession(request)
+        if (orderSession?.role === 'staff') {
+          const ownerOnlyFields = ['paymentStatus', 'paymentRejectionReason', 'deliveryFee']
+          if (ownerOnlyFields.some((key) => Object.hasOwn(body, key))) return send(response, 403, { error: 'Payment and financial order fields are Owner-only.' })
+          const allowedFields = new Set(['status', 'shippingStatus', 'trackingNumber', 'deliveryCompany'])
+          if (Object.keys(body).some((key) => !allowedFields.has(key))) return send(response, 403, { error: 'Staff cannot change these order fields.' })
+          if (Object.hasOwn(body, 'status')) {
+            const permission = body.status === 'Confirmed' ? 'orders.confirm' : body.status === 'Cancelled' ? 'orders.cancel' : 'orders.status'
+            if (!requireStaffPermission(request, response, permission)) return
+          }
+          if (['shippingStatus', 'trackingNumber', 'deliveryCompany'].some((key) => Object.hasOwn(body, key)) &&
+              !requireStaffPermission(request, response, 'shipping.manage')) return
+        }
         if (body.status && !ORDER_STATUSES.includes(body.status)) return send(response, 400, { error: 'Invalid order status.' })
         if (body.paymentStatus && !PAYMENT_STATUSES.includes(body.paymentStatus)) return send(response, 400, { error: 'Invalid payment status.' })
         if (body.shippingStatus && !SHIPPING_STATUSES.includes(body.shippingStatus)) return send(response, 400, { error: 'Invalid shipping status.' })
@@ -2996,14 +3597,18 @@ const server = http.createServer(async (request, response) => {
           updatedAt
         }
         data.orders = data.orders.map((order) => order.id === id ? updated : order)
-        auditAdminAction(data, request, `Updated order ${id.slice(0, 8)}.`); writeData(data)
         const statusChanged = updated.status !== existing.status
-        const shipmentChanged = updated.shippingStatus !== existing.shippingStatus || updated.trackingNumber !== existing.trackingNumber
+        const shipmentChanged = updated.shippingStatus !== existing.shippingStatus || updated.trackingNumber !== existing.trackingNumber || updated.deliveryCompany !== existing.deliveryCompany
+        const action = updated.status !== existing.status
+          ? `${updated.status === 'Confirmed' ? 'Confirmed' : updated.status === 'Cancelled' ? 'Cancelled' : 'Changed status of'} order ${id.slice(0, 8)} to ${updated.status}.`
+          : shipmentChanged ? `Updated shipping for order ${id.slice(0, 8)}.` : `Updated order ${id.slice(0, 8)}.`
+        auditAdminAction(data, request, action)
+        writeData(data)
         if (statusChanged || shipmentChanged) notifyTelegramOrderStatus(updated)
         if (['Confirmed','Verified'].includes(body.paymentStatus) && !['Confirmed','Verified'].includes(existing.paymentStatus)) {
           notifyTelegramPayment(updated)
         }
-        return send(response, 200, { order: updated })
+        return send(response, 200, { order: orderSession?.role === 'staff' ? staffSafeOrder(updated, orderSession.account.permissions.includes('orders.details')) : updated })
       }
       return send(response, 404, { error: 'Admin endpoint not found.' })
     }

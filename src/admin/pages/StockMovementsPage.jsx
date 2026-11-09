@@ -12,6 +12,7 @@ export default function StockMovementsPage({
   movements = [],
   products = [],
   onAddMovement,
+  canUpdate = true,
   showToast
 }) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -38,10 +39,10 @@ export default function StockMovementsPage({
           <h2>{adminT("Stock Movement Audit Log")}</h2>
           <p className="page-subtitle">{adminT("Track inbound inventory shipments, order deductions, returns, and write-offs")}</p>
         </div>
-        <button className="admin-btn-gold" onClick={() => setModalOpen(true)}>
+        {canUpdate && <button className="admin-btn-gold" onClick={() => setModalOpen(true)}>
           <IconPlus size={16} />
           <span>{adminT("Record Movement")}</span>
-        </button>
+        </button>}
       </div>
 
       {/* Filter and Control Bar */}
@@ -147,7 +148,7 @@ export default function StockMovementsPage({
       </div>
 
       {/* Record Movement Modal */}
-      {modalOpen && (
+      {modalOpen && canUpdate && (
         <RecordMovementModal
           products={products}
           onClose={() => setModalOpen(false)}

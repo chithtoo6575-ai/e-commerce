@@ -16,5 +16,10 @@ export function getAdminUrl(path) {
 
 export function isAdminPath(pathname = window.location.pathname) {
   const path = getAdminPath(pathname)
-  return path === '/admin' || path.startsWith('/admin/')
+  return path === '/owner-login' ||
+    path === '/staff-login' ||
+    path === '/admin' ||
+    path.startsWith('/admin/') ||
+    path === '/staff' ||
+    path.startsWith('/staff/')
 }

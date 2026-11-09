@@ -11,6 +11,7 @@
     "dev:api": "node server.js",
     "admin:setup": "node setup-admin.mjs",
     "telegram:setup": "node scripts/setup-telegram.mjs",
+    "test": "node --test",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"

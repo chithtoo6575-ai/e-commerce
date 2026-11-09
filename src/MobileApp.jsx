@@ -28,27 +28,6 @@ function getCartItemIssue(item, product) {
   return ''
 }
 
-/* Myanmar region/state → townships used by the Add New Address form */
-const MYANMAR_REGIONS = {
-  'Yangon Region': ['Yangon', 'Mandalay', 'Lashio', 'Taunggyi', 'Mawlamyine', 'Bago', 'Magway', 'Pyay', 'Myitkyina', 'Sagaing'],
-  'Mandalay Region': ['Mandalay', 'Pyin Oo Lwin', 'Kyaukse', 'Meiktila', 'Yamethin', 'Myingyan', 'Nyaung-U'],
-  'Naypyidaw Union Territory': ['Zabuthiri', 'Ottarathiri', 'Dekkhinathiri', 'Pobbathiri', 'Tatkon'],
-  'Ayeyarwady Region': ['Pathein', 'Hinthada', 'Maubin', 'Myaungmya', 'Bogale', 'Labutta', 'Pyapon'],
-  'Bago Region': ['Bago', 'Taungoo', 'Pyay', 'Tharrawaddy', 'Nattalin', 'Shwegyin'],
-  'Magway Region': ['Magway', 'Minbu', 'Pakokku', 'Thayet', 'Gangaw', 'Yenangyaung'],
-  'Sagaing Region': ['Sagaing', 'Monywa', 'Shwebo', 'Katha', 'Kale', 'Tamu', 'Hkamti'],
-  'Tanintharyi Region': ['Dawei', 'Myeik', 'Kawthaung', 'Bokpyin', 'Thayetchaung'],
-  'Kachin State': ['Myitkyina', 'Bhamo', 'Putao', 'Hpakant', 'Mohnyin'],
-  'Kayah State': ['Loikaw', 'Demoso', 'Hpasawng', 'Bawlake', 'Mese'],
-  'Kayin State': ['Hpa-An', 'Myawaddy', 'Kawkareik', 'Hlaingbwe', 'Thandaunggyi'],
-  'Chin State': ['Hakha', 'Falam', 'Mindat', 'Palan', 'Tonzang', 'Tiddim'],
-  'Mon State': ['Mawlamyine', 'Thaton', 'Ye', 'Mudon', 'Paung'],
-  'Rakhine State': ['Sittwe', 'Kyaukpyu', 'Thandwe', 'Mrauk U', 'Maungdaw'],
-  'Shan State': ['Taunggyi', 'Lashio', 'Kengtung', 'Muse', 'Tachileik', 'Nyaungshwe', 'Hsipaw'],
-  'Magway': ['Magway', 'Minbu', 'Pakokku', 'Thayet'],
-  'Tachileik': ['Tachileik', 'Kengtung', 'Monghsat']
-}
-
 const MYANMAR_REGIONS_MY = {
   'Yangon Region': 'ရန်ကုန်တိုင်းဒေသကြီး',
   'Mandalay Region': 'မန္တလေးတိုင်းဒေသကြီး',
@@ -126,7 +105,7 @@ function getPaymentKind(payment) {
 }
 
 function createEmptyAddressForm() {
-  return { fullName: '', phone: '', region: '', township: '', addressLine: '', mapLocation: '', isDefault: false }
+  return { fullName: '', phone: '', region: '', township: '', addressLine: '' }
 }
 
 function isPhoneNumber(value) {
@@ -655,20 +634,14 @@ export default function MobileApp({
       phone: address.phone || user?.phone || '',
       region: address.region || '',
       township: address.township || '',
-      addressLine: address.addressLine || address.value || '',
-      mapLocation: address.mapLocation || '',
-      isDefault: Boolean(address.default ?? address.isDefault)
-    } : { ...createEmptyAddressForm(), fullName: user?.name || '', phone: user?.phone || '', isDefault: !addressBook.length })
+      addressLine: address.addressLine || address.value || ''
+    } : { ...createEmptyAddressForm(), fullName: user?.name || '', phone: user?.phone || '' })
     setAddressFormErrors({})
     setAddressScreen('form')
   }
 
   function updateAddressField(field, value) {
-    setAddressForm((current) => {
-      const next = { ...current, [field]: value }
-      if (field === 'region') next.township = ''
-      return next
-    })
+    setAddressForm((current) => ({ ...current, [field]: value }))
     setAddressFormErrors((current) => {
       if (!current[field]) return current
       const next = { ...current }
@@ -683,10 +656,9 @@ export default function MobileApp({
     if (!addressForm.fullName.trim()) errors.fullName = 'Please enter your full name.'
     if (!addressForm.phone.trim()) errors.phone = 'Please enter your phone number.'
     else if (!isPhoneNumber(addressForm.phone)) errors.phone = 'Enter a valid phone number.'
-    if (!addressForm.region) errors.region = 'Please select a region or state.'
-    if (!addressForm.township) errors.township = 'Please select a township.'
+    if (!addressForm.region.trim()) errors.region = 'Please enter a region or state.'
+    if (!addressForm.township.trim()) errors.township = 'Please enter a township.'
     if (!addressForm.addressLine.trim()) errors.addressLine = 'Please enter your full delivery address.'
-    if (!addressForm.mapLocation) errors.mapLocation = 'Please pin your location on the map.'
     setAddressFormErrors(errors)
     if (Object.keys(errors).length) {
       showToast(tr('Please fill in all required fields.'))
@@ -695,16 +667,18 @@ export default function MobileApp({
       firstField?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
       return
     }
+    const existingAddress = addressBook.find((item) => item.id === editingAddressId)
     const payload = {
-      label: editingAddressId ? addressBook.find((item) => item.id === editingAddressId)?.label || 'Home' : 'Home',
+      label: editingAddressId ? existingAddress?.label || 'Home' : 'Home',
       fullName: addressForm.fullName.trim(),
       phone: addressForm.phone.trim(),
-      region: addressForm.region,
-      township: addressForm.township,
+      region: addressForm.region.trim(),
+      township: addressForm.township.trim(),
       addressLine: addressForm.addressLine.trim(),
-      mapLocation: addressForm.mapLocation,
-      value: `${addressForm.addressLine.trim()}, ${addressForm.township}, ${addressForm.region}`,
-      default: addressForm.isDefault || !addressBook.length
+      value: `${addressForm.addressLine.trim()}, ${addressForm.township.trim()}, ${addressForm.region.trim()}`,
+      default: editingAddressId
+        ? Boolean(existingAddress?.default ?? existingAddress?.isDefault)
+        : !addressBook.length
     }
     const saved = editingAddressId
       ? await updateAddress(editingAddressId, payload)
@@ -718,21 +692,6 @@ export default function MobileApp({
     setEditingAddressId('')
     resetAddressForm()
     setAddressScreen('list')
-  }
-
-  function pickMapLocation() {
-    if (!navigator.geolocation) {
-      showToast(tr('Location is not available on this device.'))
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords
-        updateAddressField('mapLocation', `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
-      },
-      () => showToast(tr('Unable to get your current location. Please pick it manually.')),
-      { enableHighAccuracy: true, timeout: 10000 }
-    )
   }
 
   async function confirmDeleteAccount() {
@@ -2103,7 +2062,6 @@ export default function MobileApp({
                             {addr.phone && <div className="mob-address-card-phone">{addr.phone}</div>}
                             <p className="mob-address-card-value">{addr.value}</p>
                             {regionLabel && <div className="mob-address-card-meta">{[townshipLabel, regionLabel].filter(Boolean).join(', ')}</div>}
-                            {addr.mapLocation && <div className="mob-address-card-meta">📍 {addr.mapLocation}</div>}
                             <div className="mob-address-actions">
                               <button type="button" className="mob-section-see-all" onClick={() => openAddressForm(addr)}>{tr('Edit')}</button>
                               {!addr.default && (
@@ -2167,38 +2125,29 @@ export default function MobileApp({
 
                   <div className={`mob-form-group ${addressFormErrors.region ? 'has-error' : ''}`}>
                     <label className="mob-form-label" htmlFor="mob-address-region">{tr('Region / State')} <span className="mob-req" aria-hidden="true">*</span></label>
-                    <select
+                    <input
                       id="mob-address-region"
                       className="mob-form-input"
                       value={addressForm.region}
                       onChange={(event) => updateAddressField('region', event.target.value)}
+                      placeholder={tr('Enter region or state')}
                       aria-required="true"
                       aria-invalid={Boolean(addressFormErrors.region)}
-                    >
-                      <option value="">{tr('Select region / state')}</option>
-                      {Object.keys(MYANMAR_REGIONS).map((region) => (
-                        <option key={region} value={region}>{language === 'my' ? MYANMAR_REGIONS_MY[region] || region : region}</option>
-                      ))}
-                    </select>
+                    />
                     {addressFormErrors.region && <span className="mob-field-error">{tr(addressFormErrors.region)}</span>}
                   </div>
 
                   <div className={`mob-form-group ${addressFormErrors.township ? 'has-error' : ''}`}>
                     <label className="mob-form-label" htmlFor="mob-address-township">{tr('Township')} <span className="mob-req" aria-hidden="true">*</span></label>
-                    <select
+                    <input
                       id="mob-address-township"
                       className="mob-form-input"
                       value={addressForm.township}
                       onChange={(event) => updateAddressField('township', event.target.value)}
-                      disabled={!addressForm.region}
+                      placeholder={tr('Enter township')}
                       aria-required="true"
                       aria-invalid={Boolean(addressFormErrors.township)}
-                    >
-                      <option value="">{addressForm.region ? tr('Select township') : tr('Select region / state first')}</option>
-                      {(MYANMAR_REGIONS[addressForm.region] || []).map((township) => (
-                        <option key={township} value={township}>{language === 'my' ? MYANMAR_TOWNSHIP_MY[township] || township : township}</option>
-                      ))}
-                    </select>
+                    />
                     {addressFormErrors.township && <span className="mob-field-error">{tr(addressFormErrors.township)}</span>}
                   </div>
 
@@ -2216,43 +2165,6 @@ export default function MobileApp({
                     />
                     {addressFormErrors.addressLine && <span className="mob-field-error">{tr(addressFormErrors.addressLine)}</span>}
                   </div>
-
-                  <div className={`mob-form-group ${addressFormErrors.mapLocation ? 'has-error' : ''}`}>
-                    <label className="mob-form-label" htmlFor="mob-address-mapLocation">{tr('Map Location Picker')} <span className="mob-req" aria-hidden="true">*</span></label>
-                    <div className="mob-map-picker">
-                      <div className="mob-map-picker-canvas" aria-hidden="true">
-                        <svg viewBox="0 0 320 120" role="presentation">
-                          <path d="M0 88 L70 62 L130 78 L190 44 L250 66 L320 38" />
-                          <path d="M40 0 L58 60 L36 120" />
-                          <path d="M150 0 L166 52 L142 120" />
-                          <path d="M262 0 L248 58 L272 120" />
-                        </svg>
-                        {addressForm.mapLocation ? <span className="mob-map-picker-pin" aria-hidden="true">📍</span> : null}
-                      </div>
-                      <div className="mob-map-picker-row">
-                        <input
-                          id="mob-address-mapLocation"
-                          className="mob-form-input"
-                          value={addressForm.mapLocation}
-                          onChange={(event) => updateAddressField('mapLocation', event.target.value)}
-                          placeholder={tr('Pin location on the map')}
-                          aria-required="true"
-                          aria-invalid={Boolean(addressFormErrors.mapLocation)}
-                        />
-                        <button type="button" className="mob-map-picker-btn" onClick={pickMapLocation}>{tr('Use my location')}</button>
-                      </div>
-                    </div>
-                    {addressFormErrors.mapLocation && <span className="mob-field-error">{tr(addressFormErrors.mapLocation)}</span>}
-                  </div>
-
-                  <label className="mob-address-default-toggle">
-                    <input
-                      type="checkbox"
-                      checked={addressForm.isDefault}
-                      onChange={(event) => updateAddressField('isDefault', event.target.checked)}
-                    />
-                    <span>{tr('Set as default address')}</span>
-                  </label>
 
                   <div className="mob-address-form-actions">
                     <button type="button" className="mob-btn-secondary" onClick={() => setAddressScreen('list')}>{tr('Cancel')}</button>

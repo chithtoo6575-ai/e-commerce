@@ -4,13 +4,13 @@ import AdminLoginPage from './admin/AdminLoginPage'
 import { adminT, getAdminLanguage, setAdminLanguage } from './admin/adminI18n'
 import { getAdminPath, getAdminUrl } from './admin/adminRouter'
 import { readJsonResponse, apiErrorMessage } from './lib/apiResponse'
-import { adminFetch } from './adminApi'
+import { adminFetch, clearAdminTabSession } from './adminApi'
 import './admin/AdminTheme.css'
 
 export default function AdminApp() {
   const [language, setLanguage] = useState(getAdminLanguage)
   const [auth, setAuth] = useState(null)
-  const [login, setLogin] = useState({ email: '', password: '' })
+  const [login, setLogin] = useState({ email: '', username: '', password: '' })
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -20,9 +20,8 @@ export default function AdminApp() {
     setData(null)
     setError('Your Admin session has expired. Please sign in again.')
     setLoading(false)
-    if (getAdminPath() !== '/admin/login') {
-      window.history.replaceState(null, '', getAdminUrl('/admin/login'))
-    }
+    clearAdminTabSession()
+    if (getAdminPath() !== '/owner-login') window.history.replaceState(null, '', getAdminUrl('/owner-login'))
   }, [])
 
   useEffect(() => {
@@ -30,17 +29,25 @@ export default function AdminApp() {
   }, [language])
 
   useEffect(() => {
-    if (auth && getAdminPath() === '/admin/login') {
-      window.history.replaceState(null, '', getAdminUrl('/admin'))
-    } else if (!auth && !loading && getAdminPath() !== '/admin/login') {
-      window.history.replaceState(null, '', getAdminUrl('/admin/login'))
+    const path = getAdminPath()
+    if (auth) {
+      const target = auth.role === 'staff' ? '/staff' : '/admin'
+      const protectedOwnerPath = path === '/admin' || path.startsWith('/admin/')
+      const protectedStaffPath = path === '/staff' || path.startsWith('/staff/')
+      const correctLoginPath = path === '/owner-login' || path === '/staff-login' || path === '/admin/login'
+      if ((auth.role === 'staff' && protectedOwnerPath) || (auth.role === 'owner' && protectedStaffPath) || correctLoginPath) {
+        window.history.replaceState(null, '', getAdminUrl(target))
+      }
+    } else if (!loading) {
+      const loginPath = '/owner-login'
+      if (path !== loginPath) window.history.replaceState(null, '', getAdminUrl(loginPath))
     }
   }, [auth, loading])
 
-  const changeLanguage = (nextLanguage) => {
+  const changeLanguage = useCallback((nextLanguage) => {
     const next = setAdminLanguage(nextLanguage)
     setLanguage(next)
-    if (!auth) return
+    if (!auth || auth.role !== 'owner') return
     adminFetch('/api/admin/preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -53,7 +60,7 @@ export default function AdminApp() {
       .catch((preferenceError) => {
         console.error('[AdminApp] Could not save the Admin language preference:', preferenceError)
       })
-  }
+  }, [auth])
 
   const restoreAdminLanguage = (admin) => {
     if (admin?.languagePreference === 'my' || admin?.languagePreference === 'en') {
@@ -92,7 +99,9 @@ export default function AdminApp() {
         const response = await adminFetch('/api/admin/session')
         if (!response.ok) {
           if (response.status === 401) {
-            if (getAdminPath() !== '/admin/login') window.history.replaceState(null, '', getAdminUrl('/admin/login'))
+            const path = getAdminPath()
+            const target = '/owner-login'
+            if (path !== target) window.history.replaceState(null, '', getAdminUrl(target))
             if (active) setError('')
             return
           }
@@ -100,10 +109,18 @@ export default function AdminApp() {
         }
         const { admin } = await response.json()
         if (!admin) return
+        if (admin.role !== 'owner' && admin.role !== 'staff') throw new Error('The server returned an invalid account role.')
         await loadDashboard()
         if (active) {
           restoreAdminLanguage(admin)
           setAuth(admin)
+          const path = getAdminPath()
+          const expectedPath = admin.role === 'staff' ? '/staff' : '/admin'
+          if (path === '/owner-login' || path === '/staff-login' || path === '/admin/login' ||
+              (admin.role === 'staff' && (path === '/admin' || path.startsWith('/admin/'))) ||
+              (admin.role === 'owner' && (path === '/staff' || path.startsWith('/staff/')))) {
+            window.history.replaceState(null, '', getAdminUrl(expectedPath))
+          }
         }
       } catch (sessionError) {
         console.error('[AdminApp] Could not restore the Admin session:', sessionError)
@@ -121,20 +138,29 @@ export default function AdminApp() {
     e.preventDefault()
     setError('')
     try {
-      const res = await adminFetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(login)
-      })
-      const result = await readJsonResponse(res, adminT('Unable to sign in. Please try again.', language))
-      if (!res.ok) {
-        setError(apiErrorMessage(result, adminT('Invalid email or password.', language)))
+      let result
+      let lastError
+      for (const endpoint of ['/api/owner/login', '/api/staff/login']) {
+        const res = await adminFetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: login.email, password: login.password })
+        })
+        const candidate = await readJsonResponse(res, adminT('Unable to sign in. Please try again.', language))
+        if (res.ok) {
+          result = candidate
+          break
+        }
+        lastError = apiErrorMessage(candidate, adminT('Invalid email or password.', language))
+      }
+      if (!result?.admin || !['owner', 'staff'].includes(result.admin.role)) {
+        setError(lastError || adminT('Invalid email or password.', language))
         return
       }
-      if (!result.admin) throw new Error(adminT('The server returned an unexpected response. Please try again.', language))
       await loadDashboard()
       restoreAdminLanguage(result.admin)
       setAuth(result.admin)
+      setLogin({ email: '', username: '', password: '' })
     } catch (loginError) {
       console.error('[AdminApp] Admin login failed:', loginError)
       setError(loginError?.message || adminT('Unable to sign in to the Admin dashboard.', language))
@@ -144,11 +170,15 @@ export default function AdminApp() {
   // Logout handler
   const handleLogout = async () => {
     try {
-      await adminFetch('/api/admin/logout', { method: 'POST' })
+      await adminFetch(auth?.role === 'staff' ? '/api/staff/logout' : '/api/admin/logout', { method: 'POST' })
     } catch (logoutError) {
       console.error('[AdminApp] Admin logout failed:', logoutError)
     }
     setAuth(null)
+    setData(null)
+    setError('')
+    clearAdminTabSession()
+    window.history.replaceState(null, '', getAdminUrl('/owner-login'))
   }
 
   // Product CRUD
@@ -366,6 +396,7 @@ export default function AdminApp() {
   if (!auth) {
     return (
       <AdminLoginPage
+        role="unified"
         language={language}
         onLanguageChange={changeLanguage}
         login={login}

@@ -13,6 +13,8 @@ export default function CustomersPage({
   customers = [],
   orders = [],
   onUpdateCustomerStatus,
+  isOwner = true,
+  canEdit = true,
   showToast
 }) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -111,7 +113,7 @@ export default function CustomersPage({
       <div className="page-header-actions">
         <div>
           <h2>{adminT("Customer Directory")}</h2>
-          <p className="page-subtitle">{adminT("Track customer purchasing history, lifetime value, and delivery addresses")}</p>
+          <p className="page-subtitle">{adminT(isOwner ? "Track customer purchasing history, lifetime value, and delivery addresses" : "View customer profiles and order counts.")}</p>
         </div>
       </div>
 
@@ -156,7 +158,7 @@ export default function CustomersPage({
                 <th>{adminT("Customer")}</th>
                 <th>{adminT("Contact Details")}</th>
                 <th>{adminT("Lifetime Orders")}</th>
-                <th>{adminT("Total Spent")}</th>
+                {isOwner && <th>{adminT("Total Spent")}</th>}
                 <th>{adminT("Tier")}</th>
                 <th>{adminT("Joined")}</th>
                 <th>{adminT("Status")}</th>
@@ -166,7 +168,7 @@ export default function CustomersPage({
             <tbody>
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="table-empty-cell">{' ' + adminT("No customers found matching your search.") + ' '}</td>
+                  <td colSpan={isOwner ? 8 : 7} className="table-empty-cell">{' ' + adminT("No customers found matching your search.") + ' '}</td>
                 </tr>
               ) : (
                 filteredCustomers.map((cust) => {
@@ -194,11 +196,11 @@ export default function CustomersPage({
                       <td>
                         <span className="badge-number-pill">{cust.ordersCount} orders</span>
                       </td>
-                      <td>
+                      {isOwner && <td>
                         <strong className="gold-accent-text font-bold">
                           {formatMoney(cust.totalSpent)}
                         </strong>
-                      </td>
+                      </td>}
                       <td>
                         {isVIP ? (
                           <span className="featured-pill vip-pill">{adminT("VIP Gold")}</span>
@@ -244,14 +246,15 @@ export default function CustomersPage({
           )}
           onClose={() => setSelectedCustomer(null)}
           onToggleStatus={() => { void handleToggleStatus(selectedCustomer) }}
-          canToggleStatus={selectedCustomer.statusManaged}
+          canToggleStatus={canEdit && selectedCustomer.statusManaged}
+          isOwner={isOwner}
         />
       )}
     </div>
   )
 }
 
-function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus, canToggleStatus }) {
+function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus, canToggleStatus, isOwner }) {
   const isVIP = customer.totalSpent >= 200000
 
   return (
@@ -281,10 +284,10 @@ function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus, canTo
           </div>
 
           <div className="drawer-specs-grid">
-            <div className="spec-card">
+            {isOwner && <div className="spec-card">
               <small>{adminT("Total Lifetime Spend")}</small>
               <strong className="gold-accent-text">{formatMoney(customer.totalSpent)}</strong>
-            </div>
+            </div>}
             <div className="spec-card">
               <small>{adminT("Orders Count")}</small>
               <strong>{customer.ordersCount || orders.length} orders</strong>
@@ -315,9 +318,9 @@ function CustomerDetailDrawer({ customer, orders, onClose, onToggleStatus, canTo
                     <div>
                       <Badge>{o.status}</Badge>
                     </div>
-                    <strong className="gold-accent-text font-mono">
+                    {isOwner && <strong className="gold-accent-text font-mono">
                       {formatMoney(o.total)}
-                    </strong>
+                    </strong>}
                   </div>
                 ))}
               </div>

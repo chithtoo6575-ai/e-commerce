@@ -60,6 +60,26 @@ GitHub Pages hosts static files only; it does not run `server.js`, Node.js APIs,
 
 `npm run admin:setup` creates or replaces the owner account by hashing the password with Node `scrypt` and storing only the salted hash in `data/admin.json`. Run it once for a new local account, or again whenever you intentionally change the credentials, then restart the API. Open `/admin/login` for owner access (or `/e-commerce/admin/login` when using this repository's configured deployment base). After signing in, use the Orders section or open `/admin/orders` directly. The API rejects every `/api/admin/*` request without an authenticated HttpOnly session. Admin credentials are never bundled into the frontend.
 
+## Owner and Staff accounts
+
+The Owner signs in at `/owner-login` (or `/e-commerce/owner-login` under this repository's configured base path). Staff sign in separately at `/staff-login` (or `/e-commerce/staff-login`). The existing Owner account in `data/admin.json` remains the Owner identity; do not run `npm run admin:setup` unless you intentionally want to replace its credentials.
+
+Before deploying an update that starts the API, stop the running server and make a backup of both the active SQLite database and Owner account file. The default active database is `data/shop.sqlite`; do not back up or restore `data/shop.db` unless `SHOP_DATABASE_FILE` explicitly points to it. For example, from PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force backups
+Copy-Item data\shop.sqlite backups\shop-before-staff.sqlite
+Copy-Item data\admin.json backups\owner-before-staff.json
+```
+
+Keep the backup outside the web root and restrict access because it contains customer/order data and the Owner password hash. Stop the API before copying so SQLite can checkpoint its write-ahead log. If `data\shop.sqlite-wal` still exists after shutdown, keep it with the matching database backup. Verify the backup is non-empty before continuing. To restore after a failed migration, stop the API, preserve the failed database separately for diagnosis, and restore the matching pre-upgrade SQLite and Owner files together; never delete or reset the active database as a migration workaround.
+
+On the next API start, migration version 3 creates only the `staff_accounts` and `staff_activity_logs` tables in the configured SQLite database. It does not replace the Owner account or reset products, categories, orders, customers, stock, payments, or settings. The migration is idempotent and can be verified in SQLite through `schema_migrations`. Do not manually create these tables or edit the migration ledger.
+
+After the migration, sign in as Owner and open **Staff Management** in the Owner dashboard. Create Staff accounts there, assign each account only the permissions it needs, and share its username/password securely. The service never creates default Staff credentials. Passwords must be at least 12 characters; only salted `scrypt` hashes are stored. Deactivated accounts cannot sign in, and changing a password, account status, or permissions revokes that Staff member's active sessions. Staff cannot manage accounts or activity logs, and Owner-only financial values and payment details are removed from Staff API projections as well as hidden in the interface.
+
+Run the isolated SQLite integration tests with `npm test`. The test starts the API against a temporary database and Owner file under the operating-system temporary directory; it does not migrate or modify `data\shop.sqlite` or `data\admin.json`.
+
 ## Telegram Bot, Mini App, and customer sign-in
 
 The bot reuses the existing Node API and SQLite order/customer store. Set these values in the API server's local `.env`; never put the bot token, webhook secret, OIDC client secret, or other private credentials in frontend code:
