@@ -12,10 +12,10 @@
   --mob-subtle: #aaa69d;
   --mob-line: #eae6dc;
   --mob-line-light: #f5f2eb;
-  --mob-brand: #b3945b;
-  --mob-brand-dark: #917444;
-  --mob-brand-light: #f7f2e8;
-  --mob-accent: #c0a36b;
+  --mob-brand: #F4C94B;
+  --mob-brand-dark: #D4A830;
+  --mob-brand-light: #FBF3D6;
+  --mob-accent: #E6B83A;
   --mob-success: #10b981;
   --mob-success-light: #ecfdf5;
   --mob-danger: #ef4444;
@@ -47,7 +47,7 @@
 
 .buyer-auth-screen {
   background:
-    radial-gradient(ellipse at 8% 0%, rgba(179, 148, 91, .18), transparent 40%),
+    radial-gradient(ellipse at 8% 0%, rgba(244, 201, 75, .18), transparent 40%),
     linear-gradient(145deg, #f6f0e6, #eee4d4);
   color: #34271e;
 }
@@ -55,7 +55,7 @@
 .buyer-auth-card {
   border-color: #e3d5bf;
   background: #fffdf9;
-  box-shadow: 0 24px 64px rgba(71, 46, 25, .16);
+  box-shadow: 0 24px 64px rgba(244, 201, 75, .16);
   backdrop-filter: none;
 }
 
@@ -92,7 +92,7 @@
 }
 
 .buyer-auth-password-toggle:hover {
-  background: rgba(112, 70, 44, .08);
+  background: rgba(212, 168, 48, .08);
   color: #54351f;
 }
 
@@ -107,7 +107,7 @@
 .buyer-auth-input:focus {
   border-color: #987047;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(152, 112, 71, .15);
+  box-shadow: 0 0 0 3px rgba(230, 184, 58, .15);
 }
 
 .buyer-auth-remember input {
@@ -118,7 +118,7 @@
   border-color: #70462c;
   background: linear-gradient(135deg, #966743, #68432c);
   color: #fff8ee;
-  box-shadow: 0 9px 22px rgba(91, 56, 32, .22);
+  box-shadow: 0 9px 22px rgba(212, 168, 48, .22);
 }
 
 .buyer-auth-error {
@@ -177,7 +177,7 @@
 .mob-saved-later-row { padding: .45rem 0; font-size: .73rem; border-top: 1px solid var(--mob-line-light); }
 .mob-address-actions { justify-content: flex-start; margin-top: .5rem; }
 .mob-danger-link { color: var(--mob-danger) !important; }
-.mob-danger-account, .mob-btn-danger { border: 1px solid var(--mob-danger); background: var(--mob-danger); color: #fff; font-weight: 800; padding: .75rem 1rem; border-radius: var(--mob-radius-md); }
+.mob-danger-account, .mob-btn-danger { border: 1px solid var(--mob-danger); background: var(--mob-danger); color: #1a1a1a; font-weight: 800; padding: .75rem 1rem; border-radius: var(--mob-radius-md); }
 .mob-btn-danger:disabled { opacity: .5; cursor: not-allowed; }
 .mob-legal { padding: .75rem; border: 1px solid var(--mob-line); border-radius: var(--mob-radius-md); }
 .mob-legal p { margin-top: .5rem; color: var(--mob-muted); line-height: 1.5; }
@@ -276,7 +276,7 @@
   width: 34px;
   height: 34px;
   background: linear-gradient(135deg, var(--mob-brand), var(--mob-brand-dark));
-  color: #fff;
+  color: #1a1a1a;
   border-radius: var(--mob-radius-md);
   display: flex;
   align-items: center;
@@ -284,7 +284,7 @@
   font-weight: 800;
   font-size: 1rem;
   letter-spacing: -0.02em;
-  box-shadow: 0 4px 10px rgba(217, 108, 40, 0.25);
+  box-shadow: 0 4px 10px rgba(244, 201, 75, 0.25);
 }
 
 .mob-logo-text {
@@ -359,7 +359,7 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.65rem;
   font-weight: 800;
   display: flex;
@@ -402,7 +402,7 @@
 
 .mob-search-bar:focus-within {
   border-color: var(--mob-brand);
-  box-shadow: 0 0 0 3px rgba(217, 108, 40, 0.12);
+  box-shadow: 0 0 0 3px rgba(244, 201, 75, 0.12);
 }
 
 .mob-search-icon {
@@ -476,9 +476,9 @@
 
 .mob-chip.active {
   background: var(--mob-brand);
-  color: #ffffff;
+  color: #1a1a1a;
   border-color: var(--mob-brand);
-  box-shadow: 0 3px 10px rgba(217, 108, 40, 0.25);
+  box-shadow: 0 3px 10px rgba(244, 201, 75, 0.25);
 }
 
 /* --------------------------------------------------------------------------
@@ -605,7 +605,7 @@
   flex: 0 0 auto;
   border: 0;
   background: none;
-  color: var(--mob-brand-dark, #917444);
+  color: var(--mob-brand-dark, #D4A830);
   font-size: .78rem;
   font-weight: 800;
   cursor: pointer;
@@ -650,7 +650,7 @@
 
 .support-channel-action {
   flex: 0 0 auto;
-  color: var(--mob-brand-dark, #917444);
+  color: var(--mob-brand-dark, #D4A830);
   font-size: .75rem;
   font-weight: 800;
   white-space: nowrap;
@@ -705,7 +705,7 @@
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   border-radius: var(--mob-radius-xl);
   padding: 1.25rem;
-  color: #fff;
+  color: #1a1a1a;
   position: relative;
   overflow: hidden;
   box-shadow: var(--mob-shadow-md);
@@ -719,15 +719,15 @@
   width: 140px;
   height: 140px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(217, 108, 40, 0.45) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(244, 201, 75, 0.45) 0%, transparent 70%);
   pointer-events: none;
 }
 
 .mob-hero-badge {
   display: inline-block;
-  background: rgba(217, 108, 40, 0.25);
+  background: rgba(244, 201, 75, 0.25);
   color: #ffedd5;
-  border: 1px solid rgba(217, 108, 40, 0.45);
+  border: 1px solid rgba(244, 201, 75, 0.45);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -907,7 +907,7 @@
   letter-spacing: 0.02em;
   line-height: 1.35;
   text-transform: uppercase;
-  color: #fff;
+  color: #1a1a1a;
   background: #20252c;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
 }
@@ -930,7 +930,7 @@
   top: 8px;
   left: 8px;
   background: var(--mob-danger);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.65rem;
   font-weight: 800;
   padding: 0.2rem 0.5rem;
@@ -1064,7 +1064,7 @@
 .mob-card-add-btn:active {
   transform: scale(0.96);
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   border-color: var(--mob-brand);
 }
 
@@ -1151,7 +1151,7 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.6rem;
   font-weight: 800;
   display: flex;
@@ -1481,7 +1481,7 @@
   flex: 1.2;
   background: var(--mob-brand);
   border: 1px solid var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.9rem;
   font-weight: 800;
   padding: 0.8rem;
@@ -1491,7 +1491,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  box-shadow: 0 4px 14px rgba(217, 108, 40, 0.3);
+  box-shadow: 0 4px 14px rgba(244, 201, 75, 0.3);
 }
 
 .mob-btn-primary:active,
@@ -1694,7 +1694,7 @@
 .mob-btn-move-cart {
   flex: 1;
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   border: none;
   font-size: 0.75rem;
   font-weight: 700;
@@ -1857,7 +1857,7 @@
 .mob-form-textarea:focus {
   outline: none;
   border-color: var(--mob-brand);
-  box-shadow: 0 0 0 3px rgba(217, 108, 40, 0.12);
+  box-shadow: 0 0 0 3px rgba(244, 201, 75, 0.12);
 }
 
 .mob-form-textarea {
@@ -2025,7 +2025,7 @@
   align-items: center;
   gap: 0.4rem;
   background: var(--mob-ink);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.82rem;
   font-weight: 700;
   padding: 0.65rem 1.25rem;
@@ -2176,7 +2176,7 @@
 
 .mob-profile-edit-btn:active {
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .mob-profile-contact {
@@ -2204,7 +2204,7 @@
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border-radius: var(--mob-radius-xl);
   padding: 1.25rem;
-  color: #fff;
+  color: #1a1a1a;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -2217,7 +2217,7 @@
   height: 56px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--mob-brand), var(--mob-brand-dark));
-  color: #fff;
+  color: #1a1a1a;
   font-size: 1.4rem;
   font-weight: 800;
   display: flex;
@@ -2246,7 +2246,7 @@
 
 .mob-profile-tier {
   display: inline-block;
-  background: rgba(217, 108, 40, 0.25);
+  background: rgba(244, 201, 75, 0.25);
   color: #fed7aa;
   font-size: 0.65rem;
   font-weight: 700;
@@ -2598,7 +2598,7 @@
 .mob-chat-bubble.from-customer {
   align-self: flex-end;
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
   border-bottom-right-radius: 4px;
 }
 
@@ -2637,7 +2637,7 @@
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.92);
-  color: #fff;
+  color: #1a1a1a;
   font-size: 0.82rem;
   font-weight: 700;
   padding: 0.55rem 1.15rem;
@@ -2676,7 +2676,7 @@ html:lang(my) .buyer-auth-screen {
 
 .mob-logo-badge {
   background: linear-gradient(145deg, #c7ad79, #9d804c);
-  box-shadow: 0 4px 10px rgba(145, 116, 68, .2);
+  box-shadow: 0 4px 10px rgba(212, 168, 48, .2);
 }
 
 .mob-logo-sub {
@@ -2697,7 +2697,7 @@ html:lang(my) .buyer-auth-screen {
 
 .mob-search-bar:focus-within {
   border-color: var(--mob-brand);
-  box-shadow: 0 0 0 3px rgba(179, 148, 91, .14);
+  box-shadow: 0 0 0 3px rgba(244, 201, 75, .14);
 }
 
 .mob-search-filter {
@@ -2709,7 +2709,7 @@ html:lang(my) .buyer-auth-screen {
   border: 0;
   border-radius: 12px;
   background: var(--mob-brand);
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .mob-categories-scroll {
@@ -2757,9 +2757,9 @@ html:lang(my) .buyer-auth-screen {
 }
 
 .mob-category-shortcut.active .mob-category-icon {
-  border-color: #d7c49f;
+  border-color: #F0DFA8;
   background: var(--mob-brand-light);
-  box-shadow: 0 3px 10px rgba(145, 116, 68, .1);
+  box-shadow: 0 3px 10px rgba(212, 168, 48, .1);
 }
 
 .mob-hero {
@@ -2780,7 +2780,7 @@ html:lang(my) .buyer-auth-screen {
 }
 
 .mob-hero::after {
-  background: radial-gradient(circle, rgba(196, 167, 111, .38) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(230, 184, 58, .38) 0%, transparent 70%);
 }
 
 .mob-hero > * {
@@ -2789,8 +2789,8 @@ html:lang(my) .buyer-auth-screen {
 }
 
 .mob-hero-badge {
-  background: rgba(196, 167, 111, .2);
-  border-color: rgba(220, 198, 154, .48);
+  background: rgba(230, 184, 58, .2);
+  border-color: rgba(244, 201, 75, .48);
   color: #f5ead3;
 }
 
@@ -2973,7 +2973,7 @@ html:lang(my) .buyer-auth-screen {
 .mob-sort-options button.active {
   color: var(--mob-brand-dark);
   background: var(--mob-brand-light);
-  border-color: #d7c49f;
+  border-color: #F0DFA8;
   box-shadow: none;
 }
 
@@ -3030,7 +3030,7 @@ html:lang(my) .buyer-auth-screen {
 }
 
 .mob-profile-tier {
-  background: rgba(196, 167, 111, .22);
+  background: rgba(230, 184, 58, .22);
   color: #f0dfbd;
 }
 
@@ -3043,14 +3043,14 @@ html:lang(my) .buyer-auth-screen {
 }
 
 .mob-profile-edit-btn {
-  background: rgba(196, 167, 111, .16);
+  background: rgba(230, 184, 58, .16);
   border-color: #e2d6c0;
   color: var(--mob-brand-dark);
 }
 
 .mob-profile-edit-btn:active {
   background: var(--mob-brand-dark);
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .mob-profile-contact-line {
@@ -3070,7 +3070,7 @@ html:lang(my) .buyer-auth-screen {
 .mob-icon-btn:focus-visible,
 .mob-nav-item:focus-visible,
 .mob-search-filter:focus-visible {
-  outline: 3px solid rgba(179, 148, 91, .35);
+  outline: 3px solid rgba(244, 201, 75, .35);
   outline-offset: 2px;
 }
 
@@ -3112,7 +3112,7 @@ html:lang(my) .buyer-auth-screen {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #fff;
+  color: #1a1a1a;
   box-shadow: none;
 }
 
@@ -3238,7 +3238,7 @@ html:lang(my) .buyer-auth-screen {
 .mob-nav-icon-wrap .hto-cart-badge {
   top: -7px;
   right: -9px;
-  border-color: #fff;
+  border-color: #1a1a1a;
 }
 
 .hto-add-button {
@@ -3590,7 +3590,7 @@ html:lang(my) .buyer-auth-screen {
   letter-spacing: -.005em;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(195, 154, 47, .22);
+  box-shadow: 0 4px 12px rgba(230, 184, 58, .22);
   transition: background-color .15s ease, transform .15s ease;
 }
 
@@ -3807,7 +3807,7 @@ html:lang(my) .buyer-auth-screen {
   padding: .35rem .65rem;
   border-radius: 999px;
   background: rgba(20, 32, 51, .72);
-  color: #fff;
+  color: #1a1a1a;
   font-size: .72rem;
   font-weight: 800;
 }
@@ -4559,7 +4559,7 @@ html:lang(my) .buyer-auth-screen {
 .mob-co-stepper button.mob-cart-stepper-plus {
   border-radius: 0 999px 999px 0;
   background: var(--mob-co-wine);
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .mob-co-stepper button.mob-cart-stepper-plus:disabled {
@@ -4851,7 +4851,7 @@ html:lang(my) .buyer-auth-screen {
   border: none;
   border-radius: var(--mob-radius-pill);
   background: var(--mob-co-wine);
-  color: #fff;
+  color: #1a1a1a;
   font-size: .88rem;
   font-weight: 800;
   cursor: pointer;
@@ -4879,3 +4879,6 @@ html:lang(my) .buyer-auth-screen {
     border-radius: 18px 18px 0 0;
   }
 }
+
+/* Restore readable white text on danger (red) buttons */
+.mob-btn-danger, .mob-danger-account { color: #fff !important; }

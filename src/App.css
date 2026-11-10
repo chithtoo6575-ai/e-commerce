@@ -2,11 +2,11 @@
   --paper: #fffdfa;
   --ink: #22211e;
   --muted: #817e75;
-  --brand: #b3945b;
-  --brand-strong: #917444;
+  --brand: #F4C94B;
+  --brand-strong: #D4A830;
   --panel: #ffffff;
   --line: #eae6dc;
-  --accent: #d7c49f;
+  --accent: #F0DFA8;
 }
 
 body {
@@ -60,7 +60,7 @@ textarea {
 .btn-primary {
   border: 1px solid var(--brand);
   background: var(--brand);
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .btn-primary:hover {
@@ -288,7 +288,7 @@ textarea {
   margin-top: .22rem;
   border: 1px solid #3976ed;
   background: linear-gradient(135deg, #4e8fff, #2862dc);
-  color: #fff;
+  color: #1a1a1a;
   box-shadow: 0 10px 26px rgba(39, 99, 222, .26);
 }
 
@@ -301,7 +301,7 @@ textarea {
 .buyer-auth-telegram {
   border: 1px solid rgba(0, 136, 204, .35);
   background: linear-gradient(135deg, #2aabee, #1f8ac4);
-  color: #fff;
+  color: #1a1a1a;
 }
 .buyer-auth-telegram svg { width: 19px; height: 19px; fill: currentColor; }
 .buyer-auth-primary:hover:not(:disabled), .buyer-auth-google:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
@@ -361,7 +361,7 @@ textarea {
     overflow: auto;
     padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
     background:
-      radial-gradient(ellipse at 8% 0%, rgba(179, 148, 91, .18), transparent 40%),
+      radial-gradient(ellipse at 8% 0%, rgba(244, 201, 75, .18), transparent 40%),
       linear-gradient(145deg, #f6f0e6, #eee4d4);
     color: #34271e;
     font-family: 'Manrope', sans-serif;
@@ -374,7 +374,7 @@ textarea {
     border: 1px solid #e3d5bf;
     border-radius: 26px;
     background: #fffdf9;
-    box-shadow: 0 24px 64px rgba(71, 46, 25, .16);
+    box-shadow: 0 24px 64px rgba(244, 201, 75, .16);
     animation: buyer-auth-enter .45s ease-out both;
   }
 
@@ -483,7 +483,7 @@ textarea {
   .buyer-auth-input:focus {
     border-color: #987047;
     background: #fff;
-    box-shadow: 0 0 0 3px rgba(152, 112, 71, .15);
+    box-shadow: 0 0 0 3px rgba(230, 184, 58, .15);
   }
 
   .buyer-auth-hint {
@@ -510,7 +510,7 @@ textarea {
     border-radius: 13px;
     background: linear-gradient(135deg, #966743, #68432c);
     color: #fff8ee;
-    box-shadow: 0 9px 22px rgba(91, 56, 32, .22);
+    box-shadow: 0 9px 22px rgba(212, 168, 48, .22);
     font-size: .9rem;
     font-weight: 800;
     transition: transform .18s ease, filter .18s ease;
@@ -1068,7 +1068,7 @@ textarea {
 .delivery-options .inline-check span { margin-left: auto; color: var(--muted); font-size: .85rem; }
 .payment-account-options { display: grid; gap: .65rem; }
 .payment-account-option { position: relative; display: flex; min-height: 72px; align-items: center; gap: .85rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 11px; background: #fff; cursor: pointer; }
-.payment-account-option.selected { border-color: var(--brand); background: #fff7ed; box-shadow: 0 0 0 2px rgba(217, 108, 40, .1); }
+.payment-account-option.selected { border-color: var(--brand); background: #fff7ed; box-shadow: 0 0 0 2px rgba(244, 201, 75, .1); }
 .payment-account-option input { width: 19px; height: 19px; accent-color: var(--brand); }
 .payment-account-option-copy { display: grid; flex: 1; gap: .2rem; }
 .payment-account-option-copy strong { font-size: 1rem; }
