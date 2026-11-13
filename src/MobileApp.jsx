@@ -8,6 +8,7 @@ import { t } from './lib/i18n'
 import { AddToCartButton, CartIcon } from './CartControls'
 import { getProductStock, getProductVariants, hasVariantStock, variantStockKey } from './lib/productVariants'
 import SupportChannelList from './SupportChannelList'
+import CustomerOrders from './CustomerOrders'
 
 // Header mark: white letterform only (no cart glyph, no shadow).
 const HEADER_LOGO_URL = `${getBasePath()}/logo-white.svg`
@@ -176,6 +177,10 @@ export default function MobileApp({
   paymentSlip,
   setPaymentSlip,
   orders,
+  ordersLoading,
+  ordersError,
+  buyOrderAgain,
+  cancelCustomerOrder,
   selectedOrder,
   setSelectedOrder,
   error,
@@ -258,7 +263,7 @@ export default function MobileApp({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
-  const [orderStatusFilter, setOrderStatusFilter] = useState('To Receive')
+
   const [profileName, setProfileName] = useState(user?.name || '')
   const [profilePhone, setProfilePhone] = useState(user?.phone || '')
   const [profileBusy, setProfileBusy] = useState(false)
@@ -397,13 +402,7 @@ export default function MobileApp({
   const cartCount = useMemo(() => cart.reduce((count, item) => count + Number(item.quantity || 0), 0), [cart])
   const availableSizes = useMemo(() => Array.from(new Set(products.flatMap((product) => getProductVariants(product).sizes).filter(Boolean))), [products])
   const availableColors = useMemo(() => Array.from(new Set(products.flatMap((product) => getProductVariants(product).colors).filter(Boolean))), [products])
-  const orderStatusFilters = ['To Receive', 'Received', 'Cancellations']
-  const matchesOrderStatus = (order, status) => {
-    const currentStatus = String(order.status || '').toLowerCase()
-    if (status === 'Received') return ['delivered', 'completed', 'received'].includes(currentStatus)
-    if (status === 'Cancellations') return ['cancelled', 'canceled', 'cancel'].includes(currentStatus)
-    return !['delivered', 'completed', 'received', 'cancelled', 'canceled', 'cancel'].includes(currentStatus)
-  }
+
 
   // Featured, Best Sellers, New Arrivals, Deals, Recommended
   const featuredProducts = useMemo(() => {
@@ -726,11 +725,7 @@ export default function MobileApp({
     }
   }
 
-  // Open the read-only order detail view
-  function openOrderDetail(order) {
-    setSelectedOrder(order)
-    setActiveAccountModal('chat')
-  }
+
 
   // Load Order Chat when opening an order
   const loadOrderChat = useCallback(async (order) => {
@@ -1711,7 +1706,7 @@ export default function MobileApp({
 
           {/* Account Menu List */}
           <div className="mob-menu-group">
-            <button className="mob-menu-item" onClick={() => { setOrderStatusFilter('To Receive'); setActiveAccountModal('orders') }}>
+            <button className="mob-menu-item" onClick={() => { setSelectedOrder(null); setActiveAccountModal('orders') }}>
               <div className="mob-menu-item-left">
                 <div className="mob-menu-icon">📦</div>
                 <span className="mob-menu-label">{tr('My Orders')}</span>
@@ -1940,7 +1935,7 @@ export default function MobileApp({
          -------------------------------------------------------------------- */}
       {activeAccountModal && (
         <div className="mob-sheet-overlay" onClick={() => setActiveAccountModal(null)}>
-          <div className={`mob-sheet ${activeAccountModal === 'orders' || (activeAccountModal === 'addresses' && addressScreen === 'form') ? 'mob-sheet--orders' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`mob-sheet ${activeAccountModal === 'orders' || activeAccountModal === 'chat' || activeAccountModal === 'addresses' ? 'mob-sheet--orders' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="mob-sheet-head">
               {activeAccountModal === 'orders' || activeAccountModal === 'addresses' || activeAccountModal === 'help' ? (
                 <button
@@ -1976,60 +1971,14 @@ export default function MobileApp({
               </button>
             </div>
 
-            {activeAccountModal === 'orders' && (
-              <div className="mob-order-tabs" role="tablist" aria-label={tr('My Orders')}>
-                {orderStatusFilters.map((status) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={orderStatusFilter === status}
-                    className={`mob-order-tab ${orderStatusFilter === status ? 'active' : ''}`}
-                    key={status}
-                    onClick={() => setOrderStatusFilter(status)}
-                  >
-                    {tr(status)}
-                  </button>
-                ))}
-              </div>
-            )}
+
 
             <div className="mob-sheet-scroll" style={{ paddingBottom: '30px' }}>
               {/* MY ORDERS SCREEN */}
               {activeAccountModal === 'orders' && (
-                <div className="mob-orders-body">
-                  {orders.filter((order) => matchesOrderStatus(order, orderStatusFilter)).length ? (
-                    orders.filter((order) => matchesOrderStatus(order, orderStatusFilter)).map((ord) => (
-                      <button
-                        key={ord.id}
-                        type="button"
-                        className="mob-order-card mob-order-card--tappable"
-                        onClick={() => openOrderDetail(ord)}
-                      >
-                        <div className="mob-order-header">
-                          <span className="mob-order-number">#{ord.orderNumber || ord.id}</span>
-                          <span className={`mob-status-pill mob-status-${(ord.status || 'new').toLowerCase()}`}>
-                            {tr(ord.status || 'New')}
-                          </span>
-                        </div>
-                        <div className="mob-order-items-preview">
-                          {(ord.items || []).map((it) => `${it.name} (×${it.quantity}) · ${formatPrice(it.price)}`).join(', ') || 'Order details'}
-                        </div>
-                        <div className="mob-order-footer">
-                          <span>
-                            <strong style={{ fontSize: '0.9rem', color: 'var(--mob-brand-dark)' }}>{formatPrice(ord.total)}</strong>
-                            {ord.createdAt && !Number.isNaN(Date.parse(ord.createdAt)) && <small style={{ display: 'block', color: 'var(--mob-muted)' }}>{new Date(ord.createdAt).toLocaleDateString()}</small>}
-                          </span>
-                          <span className="mob-order-card-chevron">{tr('View Details')} ›</span>
-                        </div>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="mob-empty-state">
-                      <div className="mob-empty-icon">📦</div>
-                      <h4 className="mob-empty-title">{tr(orderStatusFilter === 'Received' ? 'No received orders yet' : orderStatusFilter === 'Cancellations' ? 'No cancelled orders' : 'No orders to receive')}</h4>
-                      <p className="mob-empty-desc">{tr('Your placed orders will show up here with live status updates.')}</p>
-                    </div>
-                  )}
+                <div>
+                  <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={setSelectedOrder} formatPrice={formatPrice} onBuyAgain={(order) => { buyOrderAgain(order); setActiveAccountModal(null) }} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} compact />
+                  {selectedOrder && user?.id && <button className="mob-btn-secondary" onClick={() => loadOrderChat(selectedOrder)}>{tr('Chat with Shop Owner')}</button>}
                 </div>
               )}
 
@@ -2330,21 +2279,6 @@ export default function MobileApp({
               {/* ORDER CHAT MODAL */}
               {activeAccountModal === 'chat' && selectedOrder && (
                 <div>
-                  <div style={{ padding: '0.75rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)', marginBottom: '0.85rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <span style={{ fontWeight: 800 }}>Order #{selectedOrder.orderNumber || selectedOrder.id}</span>
-                      <span className={`mob-status-pill mob-status-${(selectedOrder.status || 'new').toLowerCase()}`}>
-                        {selectedOrder.status}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
-                      Total: <strong>{formatPrice(selectedOrder.total)}</strong> · Payment: {selectedOrder.paymentStatus}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
-                      {tr('Order date')}: {selectedOrder.createdAt && !Number.isNaN(Date.parse(selectedOrder.createdAt)) ? new Date(selectedOrder.createdAt).toLocaleString() : tr('Not available')}
-                    </div>
-                  </div>
-
                   <div className="mob-order-timeline">
                     {['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered'].map((status) => {
                       const statuses = ['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered']
@@ -2355,6 +2289,19 @@ export default function MobileApp({
                     })}
                     {selectedOrder.status === 'Cancelled' && <div className="cancelled">{tr('Cancelled')}</div>}
                   </div>
+
+                  <div className="mob-order-detail-items">
+                    <div>{tr('Name')}<strong>{selectedOrder.customer?.name || tr('Not specified')}</strong></div>
+                    <div>{tr('Phone Number')}<strong>{selectedOrder.customer?.phone || tr('Not specified')}</strong></div>
+                    <div>{tr('Payment method')}<strong>{selectedOrder.paymentMethod || tr('Not specified')}</strong></div>
+                    <div>{tr('Payment status')}<strong>{tr(selectedOrder.paymentStatus || 'Pending')}</strong></div>
+                    <div>{tr('Shipping address')}<strong>{selectedOrder.customer?.address || tr('Not specified')}</strong></div>
+                    <div>{tr('Delivery method')}<strong>{tr(selectedOrder.deliveryMethod || 'Not specified')}</strong></div>
+                    {selectedOrder.trackingNumber && <div>{tr('Tracking number')}<strong>{selectedOrder.trackingNumber}{getDeliveryTrackingUrl?.(selectedOrder.deliveryCompany, selectedOrder.trackingNumber) && <> · <a href={getDeliveryTrackingUrl(selectedOrder.deliveryCompany, selectedOrder.trackingNumber)} target="_blank" rel="noopener noreferrer">{tr('Track delivery')}</a></>}</strong></div>}
+                    {selectedOrder.deliveryCompany && <div>{tr('Delivery company')}<strong>{selectedOrder.deliveryCompany}</strong></div>}
+                    <div>{tr('Shipping status')}<strong>{tr(selectedOrder.shippingStatus || 'Preparing')}</strong></div>
+                  </div>
+
                   <div className="mob-order-detail-items">
                     {(selectedOrder.items || []).map((item) => (
                       <div key={item.productId || item.id}>
@@ -2370,20 +2317,27 @@ export default function MobileApp({
                       </div>
                     ))}
                   </div>
+
                   <div className="mob-order-detail-items">
-                    <div>{tr('Name')}<strong>{selectedOrder.customer?.name || tr('Not specified')}</strong></div>
-                    <div>{tr('Phone Number')}<strong>{selectedOrder.customer?.phone || tr('Not specified')}</strong></div>
-                    <div>{tr('Payment method')}<strong>{selectedOrder.paymentMethod || tr('Not specified')}</strong></div>
-                    <div>{tr('Payment status')}<strong>{tr(selectedOrder.paymentStatus || 'Pending')}</strong></div>
-                    <div>{tr('Shipping address')}<strong>{selectedOrder.customer?.address || tr('Not specified')}</strong></div>
-                    <div>{tr('Delivery method')}<strong>{tr(selectedOrder.deliveryMethod || 'Not specified')}</strong></div>
-                    {selectedOrder.trackingNumber && <div>{tr('Tracking number')}<strong>{selectedOrder.trackingNumber}{getDeliveryTrackingUrl?.(selectedOrder.deliveryCompany, selectedOrder.trackingNumber) && <> · <a href={getDeliveryTrackingUrl(selectedOrder.deliveryCompany, selectedOrder.trackingNumber)} target="_blank" rel="noopener noreferrer">{tr('Track delivery')}</a></>}</strong></div>}
-                    {selectedOrder.deliveryCompany && <div>{tr('Delivery company')}<strong>{selectedOrder.deliveryCompany}</strong></div>}
-                    <div>{tr('Shipping status')}<strong>{tr(selectedOrder.shippingStatus || 'Preparing')}</strong></div>
                     <div>{tr('Subtotal')}<strong>{formatPrice(selectedOrder.subtotal || 0)}</strong></div>
                     <div>{tr('Discount')}<strong>−{formatPrice(selectedOrder.discount || 0)}</strong></div>
                     <div>{tr('Shipping fee')}<strong>{formatPrice(selectedOrder.shippingFee ?? selectedOrder.deliveryFee ?? 0)}</strong></div>
                     <div><strong>{tr('Grand Total')}</strong><strong>{formatPrice(selectedOrder.total || 0)}</strong></div>
+                  </div>
+
+                  <div style={{ padding: '0.75rem', background: 'var(--mob-line-light)', borderRadius: 'var(--mob-radius-md)', marginBottom: '0.85rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <span style={{ fontWeight: 800 }}>Order #{selectedOrder.orderNumber || selectedOrder.id}</span>
+                      <span className={`mob-status-pill mob-status-${(selectedOrder.status || 'new').toLowerCase()}`}>
+                        {selectedOrder.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
+                      Total: <strong>{formatPrice(selectedOrder.total)}</strong> · Payment: {selectedOrder.paymentStatus}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--mob-muted)' }}>
+                      {tr('Order date')}: {selectedOrder.createdAt && !Number.isNaN(Date.parse(selectedOrder.createdAt)) ? new Date(selectedOrder.createdAt).toLocaleString() : tr('Not available')}
+                    </div>
                   </div>
                   {activeAccountModal === 'chat' && user?.id && (
                     <>

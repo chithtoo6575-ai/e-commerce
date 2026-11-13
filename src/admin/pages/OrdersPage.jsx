@@ -780,6 +780,26 @@ export function OrderDetailDrawer({
             <div className="order-workflow-cancelled" role="status">{adminT('This order has been cancelled.')}</div>
           )}
 
+          {/* Delivery Address */}
+          <div className="drawer-section">
+            <h5>{adminT("Delivery Address")}</h5>
+            <div className="address-box">
+              {(order.customer?.township || order.customer?.city || order.customer?.region) && (
+                <p>{[order.customer.township, order.customer.city, order.customer.region].filter(Boolean).join(', ')}</p>
+              )}
+              <p>{order.customer?.address || 'No street address specified.'}</p>
+            </div>
+          </div>
+
+          {/* Order Details — itemized line items */}
+          <OrderItemsDetailTable
+            order={order}
+            items={items}
+            voucherNumber={voucherNumber}
+            purchaseDate={purchaseDate}
+            deliveryMethodLabel={deliveryMethodLabel}
+          />
+
           {/* Customer & Shipping Summary Grid */}
           <div className="drawer-specs-grid order-info-grid">
             <div className="spec-card">
@@ -839,17 +859,6 @@ export function OrderDetailDrawer({
             </div>}
           </div>
 
-          {/* Delivery Address */}
-          <div className="drawer-section">
-            <h5>{adminT("Delivery Address")}</h5>
-            <div className="address-box">
-              {(order.customer?.township || order.customer?.city || order.customer?.region) && (
-                <p>{[order.customer.township, order.customer.city, order.customer.region].filter(Boolean).join(', ')}</p>
-              )}
-              <p>{order.customer?.address || 'No street address specified.'}</p>
-            </div>
-          </div>
-
           <div className="drawer-section">
             <h5>{adminT("Delivery & Tracking")}</h5>
             <p className="text-secondary text-sm">Method: {order.deliveryMethod || 'Not specified'} · Shipping status: {order.shippingStatus || 'Preparing'}</p>
@@ -878,15 +887,6 @@ export function OrderDetailDrawer({
               {adminT(shippingSaving ? 'Saving…' : 'Save Shipping Details')}
             </button></>}
           </div>
-
-          {/* Order Details — itemized line items */}
-          <OrderItemsDetailTable
-            order={order}
-            items={items}
-            voucherNumber={voucherNumber}
-            purchaseDate={purchaseDate}
-            deliveryMethodLabel={deliveryMethodLabel}
-          />
 
           {/* Ordered Products Summary */}
           <div className="drawer-section">

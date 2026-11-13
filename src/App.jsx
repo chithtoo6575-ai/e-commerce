@@ -153,7 +153,7 @@ function mapCustomerOrder(order) {
     ...order,
     orderNumber: order.orderNumber || order.order_number || order.id,
     status,
-    statusHistory: Array.isArray(order.statusHistory) ? order.statusHistory : [{ status, at: createdAt }],
+    statusHistory: Array.isArray(order.statusHistory) ? order.statusHistory : [],
     createdAt,
     total: Number(order.total ?? order.grandTotal ?? 0),
     subtotal: Number(order.subtotal ?? 0),
@@ -167,8 +167,8 @@ function mapCustomerOrder(order) {
     paymentMethod: order.paymentMethod || order.payment_method || '',
     customer: {
       ...rawCustomer,
-      name: rawCustomer.name || order.recipientName || order.recipient_name || '',
-      phone: rawCustomer.phone || order.recipientPhone || order.recipient_phone || '',
+      name: rawCustomer.name || rawShippingAddress?.fullName || order.recipientName || order.recipient_name || '',
+      phone: rawCustomer.phone || rawShippingAddress?.phone || order.recipientPhone || order.recipient_phone || '',
       address: shippingAddress
     },
     items: items.map((item) => ({
@@ -176,6 +176,7 @@ function mapCustomerOrder(order) {
       id: item.id || item.productId || item.product_id,
       productId: item.productId || item.product_id || item.id,
       name: item.name || item.productName || item.product_name || 'Product',
+      image: item.image || item.productImage || item.product_image || '',
       quantity: Number(item.quantity || 0),
       price: Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0),
       lineTotal: Number(item.lineTotal ?? item.line_total ?? (Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0) * Number(item.quantity || 0)))
@@ -371,6 +372,8 @@ export default function App() {
   const [paymentSlip, setPaymentSlip] = useState('')
   const [orders, setOrders] = useState([])
   const [ordersLoadedFor, setOrdersLoadedFor] = useState('')
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersError, setOrdersError] = useState('')
   const [deepLinkOrderId, setDeepLinkOrderId] = useState(() => new URLSearchParams(window.location.search).get('order') || '')
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [error, setError] = useState('')
@@ -796,31 +799,47 @@ export default function App() {
   useEffect(() => {
     if (!user?.id && !guestMode) return
     setOrders([])
+    setSelectedOrder(null)
     setOrdersLoadedFor('')
+    setOrdersLoading(true)
+    setOrdersError('')
     let active = true
+    let inFlight = false
+    const controller = new AbortController()
     const customerKey = user?.id || 'guest'
     async function loadOrders() {
+      if (inFlight) return
+      inFlight = true
       try {
-        const response = await fetch('/api/customer/orders', user?.id ? {} : {
-          headers: { 'X-Guest-Order-Key': getGuestOrderAccessKey() }
+        const response = await fetch('/api/customer/orders', {
+          signal: controller.signal,
+          cache: 'no-store',
+          headers: user?.id ? {} : { 'X-Guest-Order-Key': getGuestOrderAccessKey() }
         })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Unable to refresh your orders.')
         if (active) {
           setOrders(Array.isArray(result.orders) ? result.orders.map(mapCustomerOrder) : [])
           setOrdersLoadedFor(customerKey)
+          setOrdersError('')
         }
       } catch (loadError) {
-        if (active) setError(loadError.message || 'Unable to refresh your orders.')
+        if (active) setOrdersError(loadError.message || 'Unable to refresh your orders.')
+      } finally {
+        inFlight = false
+        if (active) setOrdersLoading(false)
       }
     }
-    const refresh = () => { void loadOrders() }
+    const refresh = () => { if (document.visibilityState !== 'hidden') void loadOrders() }
     refresh()
     window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
     const interval = window.setInterval(refresh, 15_000)
     return () => {
       active = false
+      controller.abort()
       window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
       window.clearInterval(interval)
     }
   }, [user?.id, guestMode])
@@ -828,8 +847,8 @@ export default function App() {
   useEffect(() => {
     if (!selectedOrder?.id) return
     const latestOrder = orders.find((order) => order.id === selectedOrder.id)
-    if (latestOrder && latestOrder.updatedAt !== selectedOrder.updatedAt) setSelectedOrder(latestOrder)
-  }, [orders, selectedOrder?.id, selectedOrder?.updatedAt])
+    if (latestOrder && latestOrder !== selectedOrder) setSelectedOrder(latestOrder)
+  }, [orders, selectedOrder])
 
   useEffect(() => {
     if (!user?.id || !deepLinkOrderId || ordersLoadedFor !== user.id) return
@@ -1253,6 +1272,34 @@ export default function App() {
       return [...current, { id: product.id, cartKey, name: product.name, price: product.price, image: product.image, sku: product.sku, variants, quantity, selected: true }]
     })
     return true
+  }
+
+  function buyOrderAgain(order) {
+    let added = 0
+    for (const line of order?.items || []) {
+      const product = products.find((item) => String(item.id) === String(line.productId || line.id))
+      if (product && addToCart({ ...product, selectedVariants: line.variants || {} }, Math.max(1, Number(line.quantity) || 1))) added += 1
+    }
+    if (added) setActiveTab('cart')
+    if (!added) setError('The products in this order are no longer available.')
+  }
+
+  async function cancelCustomerOrder(order) {
+    if (!order?.id || !window.confirm(`Cancel order #${order.orderNumber || order.id}?`)) return
+    try {
+      const response = await fetch(`/api/customer/orders/${encodeURIComponent(order.id)}/cancel`, {
+        method: 'POST',
+        headers: user?.id ? {} : { 'X-Guest-Order-Key': getGuestOrderAccessKey() }
+      })
+      const result = await readJsonResponse(response, 'Unable to cancel this order.')
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Unable to cancel this order.'))
+      const updated = mapCustomerOrder(result.order)
+      setOrders((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setSelectedOrder(updated)
+      setError('')
+    } catch (cancelError) {
+      setError(cancelError.message || 'Unable to cancel this order.')
+    }
   }
 
   function updateQuantity(id, amount) {
@@ -1700,6 +1747,8 @@ export default function App() {
     paymentSlip,
     setPaymentSlip,
     orders,
+    ordersLoading,
+    ordersError,
     selectedOrder,
     setSelectedOrder,
     error,
@@ -1737,6 +1786,8 @@ export default function App() {
     validateCheckoutStep,
     handlePaymentSlip,
     placeOrder,
+    buyOrderAgain,
+    cancelCustomerOrder,
     logout,
     MAIN_TABS,
     CATEGORY_TREE: categoryTree,

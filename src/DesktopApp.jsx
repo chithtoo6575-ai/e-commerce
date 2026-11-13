@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import BuyerAuth from './BuyerAuth'
 import { AddToCartButton } from './CartControls'
 import SupportChannelList from './SupportChannelList'
+import CustomerOrders from './CustomerOrders'
 import { getProductStock, getProductVariants } from './lib/productVariants'
 import { t } from './lib/i18n'
 import { assetUrl } from './lib/baseUrl.js'
@@ -54,6 +55,10 @@ export default function DesktopApp({
   paymentSlip,
   setPaymentSlip,
   orders,
+  ordersLoading,
+  ordersError,
+  buyOrderAgain,
+  cancelCustomerOrder,
   selectedOrder,
   setSelectedOrder,
   error,
@@ -715,19 +720,8 @@ export default function DesktopApp({
             {user && <button className="btn-ghost" onClick={logout}>{tr('Log out')}</button>}
           </article>
 
-          <article className="card-block">
-            <h3>{tr('My Orders')}</h3>
-            {orders.map((order) => (
-              <div key={order.id} className="order-row">
-                <span>{order.orderNumber || order.id}</span>
-                <span>{(order.items || []).map((item) => `${item.name} × ${item.quantity} · ${formatPrice(item.price)}`).join(', ')}</span>
-                <span>{tr(order.status)}</span>
-                <span>{formatPrice(order.total)}</span>
-                <span>{order.createdAt && !Number.isNaN(Date.parse(order.createdAt)) ? new Date(order.createdAt).toLocaleDateString() : ''}</span>
-                <button className="btn-link" onClick={() => setSelectedOrder(order)}>{tr('View Details')}</button>
-              </div>
-            ))}
-            {!orders.length && <p>{tr('No orders yet.')}</p>}
+          <article className="card-block customer-orders-panel">
+            <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={setSelectedOrder} formatPrice={formatPrice} onBuyAgain={buyOrderAgain} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} />
           </article>
 
           <article className="card-block">
@@ -807,38 +801,7 @@ export default function DesktopApp({
             <p>{tr('Track Order, Return / Refund, and support are available after order placement.')}</p>
           </article>
 
-          {selectedOrder && (
-            <article className="card-block">
-              <h3>{tr('Order Details')} <button className="btn-link" onClick={() => setSelectedOrder(null)}>{tr('Close')}</button></h3>
-              <p>{tr('Order')}: {selectedOrder.orderNumber || selectedOrder.id}</p>
-              <p>{tr('Status')}: {tr(selectedOrder.status)}</p>
-              <p>{tr('Order date')}: {selectedOrder.createdAt && !Number.isNaN(Date.parse(selectedOrder.createdAt)) ? new Date(selectedOrder.createdAt).toLocaleString() : tr('Not available')}</p>
-              <p>{tr('Name')}: {selectedOrder.customer?.name || tr('Not specified')}</p>
-              <p>{tr('Phone Number')}: {selectedOrder.customer?.phone || tr('Not specified')}</p>
-              <p>{tr('Shipping address')}: {selectedOrder.customer?.address || tr('Not specified')}</p>
-              <p>{tr('Delivery method')}: {tr(selectedOrder.deliveryMethod || 'Not specified')}</p>
-              <h4>{tr('Products')}</h4>
-              {(selectedOrder.items || []).map((item) => (
-                <p key={`${item.productId || item.id}-${item.variants?.size || ''}-${item.variants?.color || ''}`}>
-                  {item.name} × {item.quantity} · {formatPrice(item.price)} {tr('each')} · {formatPrice(item.lineTotal ?? item.price * item.quantity)}
-                </p>
-              ))}
-              <p>{tr('Payment method')}: {selectedOrder.paymentMethod || tr('Not specified')}</p>
-              <p>{tr('Payment status')}: {tr(selectedOrder.paymentStatus || 'Pending')}</p>
-              <p>{tr('Shipping status')}: {tr(selectedOrder.shippingStatus || 'Preparing')}</p>
-              {selectedOrder.trackingNumber && <p>{tr('Tracking number')}: {selectedOrder.trackingNumber}{getDeliveryTrackingUrl?.(selectedOrder.deliveryCompany, selectedOrder.trackingNumber) && <> · <a href={getDeliveryTrackingUrl(selectedOrder.deliveryCompany, selectedOrder.trackingNumber)} target="_blank" rel="noopener noreferrer">{tr('Track delivery')}</a></>}</p>}
-              {selectedOrder.deliveryCompany && <p>{tr('Delivery company')}: {selectedOrder.deliveryCompany}</p>}
-              <p>{tr('Subtotal')}: {formatPrice(selectedOrder.subtotal || 0)}</p>
-              <p>{tr('Shipping fee')}: {formatPrice(selectedOrder.shippingFee ?? selectedOrder.deliveryFee ?? 0)}</p>
-              <p>{tr('Discount')}: {formatPrice(selectedOrder.discount || 0)}</p>
-              <p><strong>{tr('Total')}: {formatPrice(selectedOrder.total)}</strong></p>
-              <h4>{tr('Track Order')}</h4>
-              {(selectedOrder.statusHistory || []).map((entry, index) => (
-                <p key={`${entry.status}-${entry.at || index}`}>{tr(entry.status)} · {entry.at && !Number.isNaN(Date.parse(entry.at)) ? new Date(entry.at).toLocaleString() : ''}</p>
-              ))}
-              <p>{tr(selectedOrder.status)}</p>
-            </article>
-          )}
+
         </section>
       )}
 
