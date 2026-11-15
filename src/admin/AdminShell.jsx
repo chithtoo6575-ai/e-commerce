@@ -29,6 +29,7 @@ import HomeSectionsPage from './pages/HomeSectionsPage'
 import HomeLayoutPage from './pages/HomeLayoutPage'
 import OrdersPage from './pages/OrdersPage'
 import OrderDetailsPage from './pages/OrderDetailsPage'
+import PosPage from './pages/PosPage'
 import ShippingRatesPage from './pages/ShippingRatesPage'
 import DeliveryCompaniesPage from './pages/DeliveryCompaniesPage'
 import PaymentMethodsPage from './pages/PaymentMethodsPage'
@@ -70,6 +71,7 @@ export default function AdminShell({
   onDeleteSubCategory,
   onUpdateCustomerStatus,
   onUpdateOrder,
+  onCreatePosSale,
   language,
   onLanguageChange
 }) {
@@ -447,6 +449,7 @@ export default function AdminShell({
   const categories = data?.categories || []
   const subCategories = data?.subCategories || []
   const customers = data?.customers || []
+  const posOrders = data?.posOrders || []
 
   return (
     <div className="admin-shell">
@@ -796,6 +799,26 @@ export default function AdminShell({
           )}
 
           {/* GROUP 4: SALES */}
+          {activeTab === 'POS' && (
+            <PosPage
+              products={products}
+              orders={posOrders}
+              canSell={hasPermission('pos.access')}
+              canViewHistory={hasPermission('pos.history')}
+              canViewReports={hasPermission('pos.reports')}
+              onCreateSale={onCreatePosSale}
+              showToast={showToast}
+            />
+          )}
+
+          {activeTab === 'POS Sales' && (
+            <PosPage products={products} orders={posOrders} canViewHistory={hasPermission('pos.history')} mode="history" />
+          )}
+
+          {activeTab === 'POS Reports' && (
+            <PosPage products={products} orders={posOrders} canViewReports={hasPermission('pos.reports')} mode="reports" />
+          )}
+
           {activeTab === 'Orders' && (
             <OrdersPage
               orders={orders}

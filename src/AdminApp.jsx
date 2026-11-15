@@ -387,6 +387,31 @@ export default function AdminApp() {
     return result.orders || []
   }
 
+  const handleCreatePosSale = async (sale) => {
+    const response = await adminFetch('/api/admin/pos/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sale)
+    })
+    const result = await readJsonResponse(response, adminT('Unable to complete the POS sale.', language))
+    if (response.status === 401) {
+      handleExpiredSession()
+      throw new Error('Your Admin session has expired. Please sign in again.')
+    }
+    if (!response.ok) throw new Error(apiErrorMessage(result, adminT('Unable to complete the POS sale.', language)))
+    if (!result.order) throw new Error(adminT('The POS API returned no saved sale.', language))
+    setData((current) => current ? {
+      ...current,
+      posOrders: [result.order, ...(current.posOrders || []).filter((order) => order.id !== result.order.id)],
+      orders: [result.order, ...(current.orders || []).filter((order) => order.id !== result.order.id)],
+      products: (current.products || []).map((product) => {
+        const updated = result.products?.find((item) => String(item.id) === String(product.id))
+        return updated || product
+      })
+    } : current)
+    return result.order
+  }
+
   if (loading) {
     return (
       <div className="admin-loading">{adminT('HTOO ATELIER')}</div>
@@ -423,6 +448,7 @@ export default function AdminApp() {
       onSaveSubCategory={handleSaveSubCategory}
       onDeleteSubCategory={handleDeleteSubCategory}
       onUpdateOrder={handleUpdateOrder}
+      onCreatePosSale={handleCreatePosSale}
       language={language}
       onLanguageChange={changeLanguage}
     />

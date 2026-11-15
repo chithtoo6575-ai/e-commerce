@@ -20,7 +20,10 @@ export const STAFF_PERMISSIONS = [
   { key: 'storefront.home_sections', label: 'Manage Home Sections', group: 'STOREFRONT MANAGEMENT' },
   { key: 'storefront.home_layout', label: 'Manage Home Layout', group: 'STOREFRONT MANAGEMENT' },
   { key: 'notifications.view', label: 'View Notifications', group: 'NOTIFICATIONS' },
-  { key: 'notifications.send', label: 'Send Notifications', group: 'NOTIFICATIONS' }
+  { key: 'notifications.send', label: 'Send Notifications', group: 'NOTIFICATIONS' },
+  { key: 'pos.access', label: 'Access POS System', group: 'SALES & POS' },
+  { key: 'pos.history', label: 'View POS Sales History', group: 'SALES & POS' },
+  { key: 'pos.reports', label: 'View POS Reports', group: 'SALES & POS' }
 ]
 
 export const STAFF_PERMISSION_KEYS = STAFF_PERMISSIONS.map(({ key }) => key)

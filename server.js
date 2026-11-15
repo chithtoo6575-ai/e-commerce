@@ -939,6 +939,7 @@ function requireStaffPermission(request, response, permission) {
 function staffPermissionFor(request) {
   const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`)
   const method = request.method
+  if (pathname === '/api/admin/pos/sales') return method === 'GET' ? 'pos.history' : method === 'POST' ? 'pos.access' : undefined
   if (pathname === '/api/admin/session' || pathname === '/api/admin/dashboard' || pathname === '/api/admin/storefront-settings') return null
   if (pathname === '/api/admin/products' || /^\/api\/admin\/products\/[^/]+$/.test(pathname)) {
     if (method === 'GET') return 'products.view'
@@ -1106,7 +1107,10 @@ function staffDashboardPayload(data, permissions) {
     categories: permissions.includes('products.view') || permissions.includes('categories.manage') ? data.categories : [],
     subCategories: permissions.includes('products.view') || permissions.includes('subcategories.manage') ? data.subCategories : [],
     customers,
-    stockMovements: permissions.includes('stock.view') ? data.stockMovements : []
+    stockMovements: permissions.includes('stock.view') ? data.stockMovements : [],
+    posOrders: permissions.includes('pos.history') || permissions.includes('pos.reports')
+      ? data.orders.filter((order) => order.source === 'pos')
+      : []
   }
 }
 function cleanPromotion(input, existing = {}) {
@@ -3379,7 +3383,103 @@ const server = http.createServer(async (request, response) => {
       if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') {
         const session = adminSession(request)
         if (session?.role === 'staff') return send(response, 200, staffDashboardPayload(data, session.account.permissions))
-        return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, subCategories: data.subCategories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [] })
+        return send(response, 200, { summary: { ...summary(data.orders), lowStock: data.products.filter((product) => product.stock > 0 && product.stock <= 5 && product.enabled !== false).length, outOfStock: data.products.filter((product) => product.stock === 0 && product.enabled !== false).length }, orders: data.orders, products: data.products, categories: data.categories, subCategories: data.subCategories, customers: data.customers.map((customer) => adminCustomerSummary(customer, data.orders)), promotions: data.promotions, stockMovements: data.stockMovements, activityLog: data.activityLog || [], posOrders: data.orders.filter((order) => order.source === 'pos') })
+      }
+      if (url.pathname === '/api/admin/pos/sales') {
+        if (request.method === 'GET') {
+          const session = adminSession(request)
+          if (session?.role === 'staff' && !session.account.permissions.includes('pos.history')) return send(response, 403, { error: 'You do not have permission to view POS sales.' })
+          return send(response, 200, { orders: data.orders.filter((order) => order.source === 'pos') })
+        }
+        if (request.method === 'POST') {
+          const session = adminSession(request)
+          if (session?.role === 'staff' && !session.account.permissions.includes('pos.access')) return send(response, 403, { error: 'You do not have permission to complete POS sales.' })
+          const body = await readBody(request)
+          const customerName = String(body.customerName || 'Walk-in customer').trim()
+          const paymentMethod = String(body.paymentMethod || 'Cash').trim()
+          if (!customerName || customerName.length > 120 || !['Cash', 'Card', 'Mobile wallet', 'Other'].includes(paymentMethod)) {
+            return send(response, 400, { error: 'Enter a valid customer name and payment method.' })
+          }
+          if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50) return send(response, 400, { error: 'A POS sale must contain between 1 and 50 product lines.' })
+          const stockRequested = new Map()
+          const variantRequested = new Map()
+          const items = []
+          let subtotal = 0
+          for (const requested of body.items) {
+            const productId = String(requested.productId || '')
+            const product = data.products.find((item) => String(item.id) === productId)
+            const quantity = Number(requested.quantity)
+            const variants = {
+              ...(typeof requested.variants?.size === 'string' ? { size: requested.variants.size } : {}),
+              ...(typeof requested.variants?.color === 'string' ? { color: requested.variants.color } : {})
+            }
+            if (!product || product.enabled === false || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) return send(response, 400, { error: 'A POS sale contains an invalid product or quantity.' })
+            const requestedTotal = (stockRequested.get(productId) || 0) + quantity
+            if (!Number.isSafeInteger(Number(product.stock)) || Number(product.stock) < requestedTotal) return send(response, 409, { error: `Insufficient stock for ${product.nameEn || product.name || 'a product'}.` })
+            stockRequested.set(productId, requestedTotal)
+            const { sizes, colors } = productVariantOptions(product)
+            if ((sizes.length && !sizes.includes(variants.size || '')) || (colors.length && !colors.includes(variants.color || ''))) return send(response, 400, { error: 'A POS sale contains an unavailable product variant.' })
+            if (product.variantStock && Object.keys(product.variantStock).length) {
+              const variantKey = productVariantStockKey(variants)
+              const requestedVariants = variantRequested.get(productId) || new Map()
+              const nextVariantQuantity = (requestedVariants.get(variantKey) || 0) + quantity
+              if (!Object.hasOwn(product.variantStock, variantKey) || Number(product.variantStock[variantKey]) < nextVariantQuantity) return send(response, 409, { error: `Insufficient stock for ${product.nameEn || product.name || 'a product'} variant.` })
+              requestedVariants.set(variantKey, nextVariantQuantity)
+              variantRequested.set(productId, requestedVariants)
+            }
+            const price = Number(product.discountPrice ?? product.price)
+            if (!Number.isSafeInteger(price) || price < 0) return send(response, 409, { error: `Invalid sale price for ${product.nameEn || product.name || 'a product'}.` })
+            subtotal += price * quantity
+            if (!Number.isSafeInteger(subtotal)) return send(response, 400, { error: 'The POS sale total exceeds the supported amount.' })
+            items.push({ id: product.id, productId: product.id, sku: product.sku || '', name: product.nameEn || product.name || 'Product', quantity, price, lineTotal: price * quantity, image: product.image || product.images?.[0] || '', variants })
+          }
+          const now = new Date().toISOString()
+          const saleId = crypto.randomUUID()
+          const order = {
+            id: saleId,
+            orderNumber: `POS-${saleId.slice(0, 8).toUpperCase()}`,
+            source: 'pos',
+            customer: { name: customerName },
+            items,
+            subtotal,
+            deliveryFee: 0,
+            shippingFee: 0,
+            discount: 0,
+            total: subtotal,
+            paymentMethod,
+            paymentStatus: 'Confirmed',
+            status: 'Delivered',
+            shippingStatus: 'Delivered',
+            createdAt: now,
+            updatedAt: now,
+            deliveredAt: now,
+            statusHistory: [{ status: 'Delivered', at: now }]
+          }
+          data.products = data.products.map((product) => {
+            const productId = String(product.id)
+            const quantity = stockRequested.get(productId)
+            if (!quantity) return product
+            const previousStock = Number(product.stock)
+            const nextStock = previousStock - quantity
+            const variantStock = product.variantStock && Object.keys(product.variantStock).length ? { ...product.variantStock } : null
+            const variantChanges = []
+            for (const [key, variantQuantity] of variantRequested.get(productId) || []) {
+              const previousVariantStock = variantStock[key]
+              variantStock[key] -= variantQuantity
+              const [size, color] = JSON.parse(key)
+              variantChanges.push({ variants: { ...(size ? { size } : {}), ...(color ? { color } : {}) }, quantity: -variantQuantity, previousStock: previousVariantStock, newStock: variantStock[key] })
+            }
+            data.stockMovements.unshift({ id: crypto.randomUUID(), productId: product.id, productName: product.nameEn || product.name, sku: product.sku || '', type: 'Stock Out', quantity: -quantity, previousStock, newStock: nextStock, reason: 'In-store POS sale', reference: order.orderNumber, ...(variantChanges.length ? { variantChanges } : {}), date: now, user: session?.account?.name || session?.account?.username || adminAccount?.email || 'Admin' })
+            return { ...product, stock: nextStock, ...(variantStock ? { variantStock } : {}), stockHistory: [...(product.stockHistory || []), { id: saleId, type: 'POS Sale', change: -quantity, stockAfter: nextStock, at: now, reference: order.orderNumber }].slice(-30) }
+          })
+          data.stockMovements = data.stockMovements.slice(0, 1000)
+          data.orders = [order, ...data.orders]
+          auditAdminAction(data, request, `Completed POS sale ${order.orderNumber} for ${subtotal}.`)
+          writeData(data)
+          const safeProducts = session?.role === 'staff' ? data.products.map(staffSafeProduct) : data.products
+          return send(response, 201, { order, products: safeProducts })
+        }
+        return send(response, 405, { error: 'Method not allowed.' }, { Allow: 'GET, POST' })
       }
       if (request.method === 'POST' && url.pathname === '/api/admin/categories') {
         const category = cleanCategory(await readBody(request))

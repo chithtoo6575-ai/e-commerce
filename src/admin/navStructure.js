@@ -9,16 +9,16 @@ import {
   IconHomeLayout,
   IconOrders,
   IconOrderDetails,
+  IconPaymentMethods,
   IconShippingRates,
   IconDeliveryCompanies,
-  IconPaymentMethods,
   IconCustomers,
   IconNotifications,
   IconSupportChannels,
   IconHelpItems
 } from './AdminIcons'
 
-// EXACT 5 GROUPS AND 16 MODULES
+// Admin navigation is grouped by the areas staff can be assigned to manage.
 export const NAV_STRUCTURE = [
   {
     group: 'GENERAL',
@@ -48,6 +48,9 @@ export const NAV_STRUCTURE = [
     items: [
       { id: 'Orders', label: 'Orders', path: '/admin/orders', icon: IconOrders, permissions: ['orders.view', 'orders.details', 'orders.confirm', 'orders.status', 'orders.cancel'] },
       { id: 'အော်ဒါအသေးစိတ်', label: 'Order Details', path: '/admin/order-details', icon: IconOrderDetails, permissions: ['orders.details'] },
+      { id: 'POS', label: 'Point of Sale', path: '/admin/pos', icon: IconPaymentMethods, permissions: ['pos.access', 'pos.history', 'pos.reports'] },
+      { id: 'POS Sales', label: 'POS Sales History', path: '/admin/pos/sales', icon: IconOrders, permissions: ['pos.history'] },
+      { id: 'POS Reports', label: 'POS Reports', path: '/admin/pos/reports', icon: IconDashboard, permissions: ['pos.reports'] },
       { id: 'Shipping Rates', label: 'Shipping Rates', path: '/admin/shipping-rates', icon: IconShippingRates, permissions: ['shipping.manage'] },
       { id: 'Delivery Companies', label: 'Delivery Companies', path: '/admin/delivery-companies', icon: IconDeliveryCompanies, permissions: ['shipping.manage'] },
       { id: 'Payment Methods', label: 'Payment Methods', path: '/admin/payment-methods', icon: IconPaymentMethods, ownerOnly: true }
