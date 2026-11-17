@@ -57,6 +57,9 @@
 .customer-order-details > .customer-sync-note {
   margin-bottom: 20px;
 }
+.customer-orders > .customer-order-tabs:first-child {
+  padding-top: 2px;
+}
 .customer-order-tabs {
   display: flex;
   gap: 8px;

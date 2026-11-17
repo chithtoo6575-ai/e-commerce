@@ -55,7 +55,6 @@ export default function CustomerOrders({ orders, selectedOrder, setSelectedOrder
     </section>
   }
   return <section className={`customer-orders ${compact ? 'customer-orders--compact' : ''}`} aria-label="My orders" ref={topRef}>
-    <div className="customer-orders-heading"><div><h3>My Orders</h3><p>Everything you ordered, all in one place.</p></div><span className="customer-sync-note">Auto-updates every 15 seconds</span></div>
     {error && <p className="customer-order-error" role="alert">{error}</p>}
     {loading && <p role="status">Loading your orders…</p>}
     <div className="customer-order-tabs" aria-label="Filter orders">{filters.map(([id, label]) => <button key={id} aria-pressed={filter === id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label} <span>{orders.filter((item) => matchesOrderFilter(item, id)).length}</span></button>)}</div>
