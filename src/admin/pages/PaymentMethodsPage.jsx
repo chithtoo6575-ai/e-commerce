@@ -149,7 +149,24 @@ export default function PaymentMethodsPage({
                         <strong className="text-primary font-medium">{method.icon} {method.name}</strong>
                         <div className="text-muted text-xs">{method.description}</div>
                       </td>
-                      <td><span className="text-muted text-xs font-mono">{method.instructions || adminT('Account details not configured')}</span></td>
+                      <td>
+                        {method.mmqrImageUrl || method.type === 'mmqr' || (method.name && method.name.toUpperCase().includes('MMQR')) ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {(method.mmqrImageUrl || method.qrCode) && (
+                              <img
+                                src={method.mmqrImageUrl || method.qrCode}
+                                alt={method.name}
+                                style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--admin-line)' }}
+                              />
+                            )}
+                            <span className="text-muted text-xs font-mono">
+                              {method.mmqrImageUrl || method.qrCode ? adminT('MMQR image configured') : adminT('MMQR image not uploaded')}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted text-xs font-mono">{method.instructions || adminT('Account details not configured')}</span>
+                        )}
+                      </td>
                       <td>
                         <button
                           className={`status-toggle-btn ${isActive ? 'toggle-on' : 'toggle-off'}`}
@@ -222,18 +239,52 @@ export default function PaymentMethodsPage({
 
 function PaymentMethodFormModal({ method, saving, onClose, onSave }) {
   const isEditing = Boolean(method.id)
-  const type = method.type || (method.id === 'bank' ? 'bank' : method.id === 'cod' ? 'cash' : 'wallet')
+  const isExistingMmqr = method.id === 'mmqr' || method.type === 'mmqr' || (method.name && method.name.toUpperCase().includes('MMQR')) || Boolean(method.mmqrImageUrl)
+  const type = method.type || (isExistingMmqr ? 'mmqr' : method.id === 'bank' ? 'bank' : method.id === 'cod' ? 'cash' : 'wallet')
   const [formData, setFormData] = useState(() => ({
     ...(method.id ? { id: method.id } : {}),
-    name: method.name || '',
-    type: isEditing ? type : 'wallet',
+    name: method.name || (type === 'mmqr' ? 'MMQR' : ''),
+    type: isEditing ? type : (isExistingMmqr ? 'mmqr' : 'wallet'),
     accountName: method.accountName || '',
     phoneNumber: method.phoneNumber || '',
     bankName: method.bankName || '',
     accountNumber: method.accountNumber || '',
+    mmqrImageUrl: method.mmqrImageUrl || method.qrCode || '',
+    qrCode: method.qrCode || method.mmqrImageUrl || '',
     status: method.status || 'Active'
   }))
   const [formSaving, setFormSaving] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+    if (!supportedType) {
+      setUploadError('QR code image must be a JPG, PNG, or WebP file.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('QR code image must be 5 MB or smaller.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setUploadError('Unable to preview the selected image.')
+        return
+      }
+      setFormData((current) => ({
+        ...current,
+        mmqrImageUrl: reader.result,
+        qrCode: reader.result
+      }))
+      setUploadError('')
+    }
+    reader.onerror = () => setUploadError('Failed to read the selected image.')
+    reader.readAsDataURL(file)
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -246,6 +297,7 @@ function PaymentMethodFormModal({ method, saving, onClose, onSave }) {
     }
   }
 
+  const isMmqr = formData.type === 'mmqr' || formData.id === 'mmqr' || (formData.name && formData.name.trim().toUpperCase().includes('MMQR'))
   const isCash = formData.type === 'cash'
   const isBank = formData.type === 'bank'
 
@@ -275,22 +327,85 @@ function PaymentMethodFormModal({ method, saving, onClose, onSave }) {
             <div className="form-group">
               <label htmlFor="payment-method-type">{adminT('Payment Type')}</label>
               {isEditing ? (
-                <input id="payment-method-type" type="text" value={adminT(type === 'cash' ? 'Cash on Delivery' : type === 'bank' ? 'Bank Transfer' : 'Mobile Wallet')} disabled />
+                <input
+                  id="payment-method-type"
+                  type="text"
+                  value={adminT(type === 'cash' ? 'Cash on Delivery' : type === 'bank' ? 'Bank Transfer' : isMmqr ? 'MMQR' : 'Mobile Wallet')}
+                  disabled
+                />
               ) : (
                 <select
                   id="payment-method-type"
                   value={formData.type}
-                  onChange={(event) => setFormData({ ...formData, type: event.target.value })}
+                  onChange={(event) => {
+                    const newType = event.target.value
+                    setFormData({
+                      ...formData,
+                      type: newType,
+                      ...(newType === 'mmqr' && !formData.name ? { name: 'MMQR' } : {})
+                    })
+                  }}
                   disabled={formSaving || saving}
                 >
                   <option value="wallet">{adminT('Mobile Wallet')}</option>
                   <option value="bank">{adminT('Bank Transfer')}</option>
+                  <option value="mmqr">{adminT('MMQR')}</option>
                 </select>
               )}
             </div>
           </div>
 
-          {!isCash && (
+          {isMmqr ? (
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label htmlFor="payment-mmqr-upload">{adminT('Upload MMQR Image')}</label>
+              <input
+                id="payment-mmqr-upload"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                onChange={handleImageUpload}
+                disabled={formSaving || saving}
+              />
+              <span className="text-muted text-xs" style={{ display: 'block', marginTop: 4, marginBottom: 8 }}>
+                {adminT('Upload a JPG, PNG, or WebP image up to 5 MB, or specify an image URL below.')}
+              </span>
+              {uploadError && <span className="form-error" style={{ display: 'block', marginBottom: 8 }}>{adminT(uploadError)}</span>}
+
+              <label htmlFor="payment-mmqr-image-url" style={{ marginTop: 8 }}>{adminT('MMQR Image URL')}</label>
+              <input
+                id="payment-mmqr-image-url"
+                type="text"
+                placeholder={adminT('https://... or upload an image above')}
+                value={formData.mmqrImageUrl || ''}
+                onChange={(event) => {
+                  const url = event.target.value
+                  setFormData({ ...formData, mmqrImageUrl: url, qrCode: url })
+                }}
+                disabled={formSaving || saving}
+              />
+
+              {(formData.mmqrImageUrl || formData.qrCode) && (
+                <div style={{ marginTop: 12 }}>
+                  <label>{adminT('MMQR Image Preview')}</label>
+                  <div className="admin-category-image-preview" style={{ width: 140, height: 140, padding: 6, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img
+                      src={formData.mmqrImageUrl || formData.qrCode}
+                      alt={adminT('MMQR Preview')}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="admin-btn-secondary btn-sm"
+                    style={{ marginTop: 8 }}
+                    onClick={() => setFormData({ ...formData, mmqrImageUrl: '', qrCode: '' })}
+                    disabled={formSaving || saving}
+                  >
+                    {adminT('Remove Image')}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : !isCash ? (
             <div className="form-grid-2">
               <div className="form-group">
                 <label htmlFor="payment-account-holder">{adminT('Account Holder')} *</label>
@@ -342,7 +457,7 @@ function PaymentMethodFormModal({ method, saving, onClose, onSave }) {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
 
           <div className="form-group">
             <label htmlFor="payment-method-status">{adminT('Status')}</label>

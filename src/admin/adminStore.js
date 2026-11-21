@@ -93,7 +93,8 @@ const SEED_DELIVERY_COMPANIES = [
 
 const SEED_PAYMENT_METHODS = [
   { id: 'pay-cod', name: 'Cash on Delivery (COD)', icon: '💵', description: 'Pay in cash when parcel arrives at your doorstep', instructions: 'Please keep exact cash ready upon arrival. Available for verified phone numbers in standard delivery zones.', status: 'Active', sortOrder: 1 },
-  { id: 'pay-kpay', name: 'KBZPay (KPay QR & Direct)', icon: '📱', description: 'Instant transfer via KBZPay mobile app', instructions: 'Transfer to 09266172967 (Chit Htoo). Please upload transaction screenshot as proof of payment.', status: 'Active', sortOrder: 2 },
+  { id: 'pay-mmqr', name: 'MMQR', icon: '🔳', description: 'Scan MMQR code to pay directly', instructions: 'Scan QR code with your mobile banking app', mmqrImageUrl: '', qrCode: '', status: 'Active', sortOrder: 2 },
+  { id: 'pay-kpay', name: 'KBZPay (KPay QR & Direct)', icon: '📱', description: 'Instant transfer via KBZPay mobile app', instructions: 'Transfer to 09266172967 (Chit Htoo). Please upload transaction screenshot as proof of payment.', status: 'Active', sortOrder: 3 },
   { id: 'pay-wave', name: 'WavePay Mobile Money', icon: '🌊', description: 'Quick payment using WavePay transfer or agent', instructions: 'Transfer to 09266172967 (Chit Htoo). Enter order number in the payment remarks field.', status: 'Active', sortOrder: 3 },
   { id: 'pay-kbzbank', name: 'KBZ Bank Transfer', icon: '🏦', description: 'Direct bank account transfer (Mobile Banking)', instructions: 'A/C: 123-456-789-001 (Chit Htoo). Branch: Yangon Main. Upload slip after payment.', status: 'Active', sortOrder: 4 },
   { id: 'pay-cbbank', name: 'CB Bank / CB Pay', icon: '🏛️', description: 'Direct payment via CB Bank account', instructions: 'A/C: 987-654-321-002 (Chit Htoo). Transfer remarks: Your HTOO Order ID.', status: 'Inactive', sortOrder: 5 },

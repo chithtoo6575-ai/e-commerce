@@ -80,29 +80,23 @@ const CHECKOUT_PAYMENT_KINDS = [
     svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></svg>
   },
   {
-    id: 'wallet',
-    titleKey: 'Mobile Wallet',
-    subtitleKey: 'KBZPay / WavePay / CB Pay and more',
-    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5" /><path d="M11 18h2" /></svg>
-  },
-  {
-    id: 'bank',
-    titleKey: 'Bank Transfer',
-    subtitleKey: 'Transfer directly to the shop bank account',
-    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-6 9 6" /><path d="M5 10v9h14v-9" /><path d="M9 19v-5h6v5" /><path d="m2 21h20" /></svg>
+    id: 'mmqr',
+    titleKey: 'MMQR',
+    subtitleKey: 'Scan the QR code and upload your payment slip',
+    svg: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM20 14h1M14 20h1M18 18h3v3h-3z" /></svg>
   }
 ]
 
 function getPaymentKind(payment) {
-  if (!payment) return 'wallet'
-  // Explicit cash/bank flags win, so a shop-configured "kind" can never make a
-  // COD account ask for a payment slip (or a transfer account skip it).
-  if (payment.type === 'cash' || payment.id === 'cod') return 'cod'
-  if (payment.kind) return payment.kind
-  const hint = `${payment.type || ''} ${payment.name || ''} ${payment.nameMyanmar || ''} ${payment.id || ''}`.toLowerCase()
-  if (hint.includes('cod') || hint.includes('cash')) return 'cod'
-  if (hint.includes('bank') || hint.includes('transfer') || hint.includes('ဘန်')) return 'bank'
-  return 'wallet'
+  if (!payment) return 'cod'
+  // COD is the only cash method; every other configured account (mobile wallets,
+  // MMQR, legacy bank entries) is paid by QR and needs a slip.
+  return payment.type === 'cash' || payment.id === 'cod' ? 'cod' : 'mmqr'
+}
+
+function isMmqrPayment(payment) {
+  if (!payment) return false
+  return payment.id === 'mmqr' || payment.type === 'mmqr' || payment.name?.toUpperCase()?.includes('MMQR') || Boolean(payment.mmqrImageUrl)
 }
 
 function createEmptyAddressForm() {
@@ -252,7 +246,6 @@ export default function MobileApp({
   const [bannerAutoplayPaused, setBannerAutoplayPaused] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia?.('(max-width: 767px)')?.matches ?? true)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false)
-  const [copiedText, setCopiedText] = useState(false)
   const [orderChatData, setOrderChatData] = useState(null)
   const [chatDraft, setChatDraft] = useState('')
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
@@ -336,20 +329,6 @@ export default function MobileApp({
   function showToast(msg) {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(''), 2400)
-  }
-
-  // Copy helper
-  async function copyToClipboard(text) {
-    if (!text) return
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is not available in this browser.')
-      await navigator.clipboard.writeText(text)
-      setCopiedText(true)
-      showToast(tr('Copied to clipboard!'))
-      setTimeout(() => setCopiedText(false), 2000)
-    } catch (copyError) {
-      setError(copyError.message || 'Unable to copy this payment detail.')
-    }
   }
 
   function closeProductDetail() {
@@ -773,10 +752,8 @@ export default function MobileApp({
     }
   }
 
-  // Shared by the review and final checkout steps: which payment kind is active
-  // (cod / wallet / bank) and the accounts configured for it.
+  // Shared by the review and final checkout steps: which payment kind is active (cod / mmqr)
   const activePaymentKind = getPaymentKind(selectedPaymentAccount)
-  const paymentKindAccounts = paymentMethods.filter((payment) => getPaymentKind(payment) === activePaymentKind)
 
   // Mobile Order Placement with loading state. Resolves to true only when the
   // order was accepted and the confirmation screen is about to be shown.
@@ -933,13 +910,14 @@ export default function MobileApp({
             ? [defaultAddress.township, defaultAddress.region].filter(Boolean).join(', ')
             : [checkoutForm.township, checkoutForm.city].filter(Boolean).join(', ')
           const choosePaymentKind = (kindId) => {
-            const match = paymentMethods.find((payment) => getPaymentKind(payment) === kindId)
+            const match = kindId === 'mmqr'
+              ? (paymentMethods.find(isMmqrPayment) || paymentMethods.find((payment) => getPaymentKind(payment) === kindId))
+              : paymentMethods.find((payment) => getPaymentKind(payment) === kindId)
             setError('')
             setPaymentSlip('')
             // Fall back to any active shop account so ordering never dead-ends on an unconfigured method.
-            setCheckoutForm({ ...checkoutForm, paymentAccountId: (match || selectedPaymentAccount)?.id || '' })
+            setCheckoutForm({ ...checkoutForm, paymentAccountId: match?.id || '' })
           }
-          const kindAccounts = paymentKindAccounts
           return (
             <div className="mob-co-review">
               {/* 1. Delivery address */}
@@ -1061,6 +1039,9 @@ export default function MobileApp({
                 <div className="mob-co-payments" role="radiogroup" aria-label={tr('Payment Method')}>
                   {CHECKOUT_PAYMENT_KINDS.map((kind) => {
                     const isSelected = activePaymentKind === kind.id
+                    const kindAccount = kind.id === 'mmqr'
+                      ? (paymentMethods.find(isMmqrPayment) || paymentMethods.find((payment) => getPaymentKind(payment) === kind.id))
+                      : paymentMethods.find((payment) => getPaymentKind(payment) === kind.id)
                     return (
                       <label key={kind.id} className={`mob-co-pay ${isSelected ? 'is-selected' : ''}`}>
                         <input
@@ -1068,6 +1049,7 @@ export default function MobileApp({
                           name="checkoutPaymentKind"
                           value={kind.id}
                           checked={isSelected}
+                          disabled={!kindAccount}
                           onChange={() => choosePaymentKind(kind.id)}
                         />
                         <span className="mob-co-pay-icon" aria-hidden="true">{kind.svg}</span>
@@ -1081,67 +1063,22 @@ export default function MobileApp({
                   })}
                 </div>
 
-                {/* Accounts (mobile wallets / bank accounts) configured for the selected method */}
-                {activePaymentKind === 'wallet' && paymentMethods.some((payment) => getPaymentKind(payment) === 'wallet') && (
-                  <div className="mob-co-account-list" role="radiogroup" aria-label={tr('Choose a mobile wallet')}>
-                    {kindAccounts.map((payment) => {
-                      const isSelected = selectedPaymentAccount?.id === payment.id
-                      return (
-                        <label key={payment.id} className={`mob-co-account ${isSelected ? 'is-selected' : ''}`}>
-                          <input
-                            type="radio"
-                            name="checkoutWalletAccount"
-                            value={payment.id}
-                            checked={isSelected}
-                            onChange={() => { setError(''); setPaymentSlip(''); setCheckoutForm({ ...checkoutForm, paymentAccountId: payment.id }) }}
-                          />
-                          <span className="mob-co-account-copy">
-                            <strong>{language === 'my' ? payment.nameMyanmar || payment.name : payment.name}</strong>
-                            <span>{[payment.accountName, payment.phoneNumber].filter(Boolean).join(' · ') || payment.name}</span>
-                          </span>
-                          <span className="mob-co-pay-radio" aria-hidden="true" />
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {activePaymentKind === 'bank' && selectedPaymentAccount && (
-                  <div className="mob-payment-detail-box">
-                    {selectedPaymentAccount.accountName && (
-                      <div className="mob-payment-detail-row">
-                        <span>{tr('Account Name')}</span>
-                        <strong>{selectedPaymentAccount.accountName}</strong>
-                      </div>
-                    )}
-                    {selectedPaymentAccount.bankName && (
-                      <div className="mob-payment-detail-row">
-                        <span>{tr('Bank Name')}</span>
-                        <strong>{selectedPaymentAccount.bankName}</strong>
-                      </div>
-                    )}
-                    {selectedPaymentAccount.accountNumber && (
-                      <div className="mob-payment-detail-row">
-                        <span>{tr('Account Number')}</span>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <strong>{selectedPaymentAccount.accountNumber}</strong>
-                          <button className="mob-copy-btn" onClick={() => copyToClipboard(selectedPaymentAccount.accountNumber)}>
-                            {copiedText ? tr('Copied') : tr('Copy')}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {selectedPaymentAccount.qrCode && (
-                      <div className="mob-qr-preview">
-                        <img src={selectedPaymentAccount.qrCode} alt={`${selectedPaymentAccount.name} QR Code`} />
-                        <small style={{ fontSize: '0.72rem', color: 'var(--mob-muted)' }}>{tr('Scan QR code with your mobile banking app')}</small>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* When MMQR is selected, directly display the configured QR image with no nested account details block */}
+                {activePaymentKind === 'mmqr' && (() => {
+                  const mmqrAccount = isMmqrPayment(selectedPaymentAccount) ? selectedPaymentAccount : (paymentMethods.find(isMmqrPayment) || selectedPaymentAccount)
+                  const qrImage = mmqrAccount?.mmqrImageUrl || mmqrAccount?.qrCode || selectedPaymentAccount?.mmqrImageUrl || selectedPaymentAccount?.qrCode
+                  return qrImage ? (
+                    <div className="mob-qr-preview">
+                      <img src={qrImage} alt={`${mmqrAccount?.name || 'MMQR'} QR Code`} />
+                      <small style={{ fontSize: '0.72rem', color: 'var(--mob-muted)' }}>{tr('Scan QR code with your mobile banking app')}</small>
+                    </div>
+                  ) : null
+                })()}
 
                 {isCashPayment ? (
                   <p className="mob-co-pay-note">{tr('No payment slip needed. Pay the delivery person when your order arrives.')}</p>
+                ) : !selectedPaymentAccount ? (
+                  <p className="mob-co-pay-note">{tr('No matching account is available.')}</p>
                 ) : (
                   <div className="mob-co-final-group">
                     <div className="mob-co-final-group-head"><span>{tr('Payment Slip')}</span></div>
@@ -1152,15 +1089,15 @@ export default function MobileApp({
                           <div className="mob-slip-actions">
                             <label className="mob-slip-upload-label">
                               <span>{tr('Replace Slip')}</span>
-                              <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
+                              <input id="checkout-payment-slip" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
                             </label>
                             <button type="button" className="mob-btn-secondary" style={{ padding: '0.65rem 1rem' }} onClick={() => setPaymentSlip('')}>{tr('Remove')}</button>
                           </div>
                         </>
                       ) : (
-                        <label className="mob-slip-upload-label">
+                        <label className="mob-slip-upload-label" htmlFor="checkout-payment-slip">
                           <span>{tr('Upload Payment Slip')}</span>
-                          <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
+                          <input id="checkout-payment-slip" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
                         </label>
                       )}
                     </div>
@@ -1935,7 +1872,7 @@ export default function MobileApp({
          -------------------------------------------------------------------- */}
       {activeAccountModal && (
         <div className="mob-sheet-overlay" onClick={() => setActiveAccountModal(null)}>
-          <div className={`mob-sheet ${activeAccountModal === 'orders' || activeAccountModal === 'chat' || activeAccountModal === 'addresses' ? 'mob-sheet--orders' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`mob-sheet ${activeAccountModal === 'orders' || activeAccountModal === 'orderDetails' || activeAccountModal === 'chat' || activeAccountModal === 'addresses' ? 'mob-sheet--orders' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="mob-sheet-head">
               {activeAccountModal === 'orders' || activeAccountModal === 'addresses' || activeAccountModal === 'help' ? (
                 <button
@@ -1963,7 +1900,7 @@ export default function MobileApp({
                 {activeAccountModal === 'settings' && tr('App Settings')}
                 {activeAccountModal === 'language' && tr('Languages')}
                 {activeAccountModal === 'help' && tr('Help & Customer Support')}
-                {activeAccountModal === 'chat' && `Order #${selectedOrder?.orderNumber || selectedOrder?.id}`}
+                {(activeAccountModal === 'chat' || activeAccountModal === 'orderDetails') && `Order #${selectedOrder?.orderNumber || selectedOrder?.id}`}
                 {activeAccountModal === 'profile' && tr('Edit profile')}
               </h3>
               <button className="mob-icon-btn" onClick={() => setActiveAccountModal(null)} aria-label={tr('Close')}>
@@ -1977,9 +1914,14 @@ export default function MobileApp({
               {/* MY ORDERS SCREEN */}
               {activeAccountModal === 'orders' && (
                 <div>
-                  <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={setSelectedOrder} formatPrice={formatPrice} onBuyAgain={(order) => { buyOrderAgain(order); setActiveAccountModal(null) }} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} compact />
+                  <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={(order) => { setSelectedOrder(order); if (order) setActiveAccountModal('orderDetails') }} formatPrice={formatPrice} onBuyAgain={(order) => { buyOrderAgain(order); setActiveAccountModal(null) }} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} compact />
                   {selectedOrder && user?.id && <button className="mob-btn-secondary" onClick={() => loadOrderChat(selectedOrder)}>{tr('Chat with Shop Owner')}</button>}
                 </div>
+              )}
+
+              {/* ORDER DETAILS / TRACKING SCREEN (opened from a My Orders card) */}
+              {activeAccountModal === 'orderDetails' && (
+                <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={(order) => { setSelectedOrder(order); if (!order) setActiveAccountModal('orders') }} formatPrice={formatPrice} onBuyAgain={(order) => { buyOrderAgain(order); setActiveAccountModal(null) }} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} compact />
               )}
 
               {activeAccountModal === 'profile' && (
@@ -2279,6 +2221,7 @@ export default function MobileApp({
               {/* ORDER CHAT MODAL */}
               {activeAccountModal === 'chat' && selectedOrder && (
                 <div>
+                  <button className="mob-btn-secondary" style={{ marginBottom: '0.85rem' }} onClick={() => setActiveAccountModal('orderDetails')}>{tr('View Order Details')}</button>
                   <div className="mob-order-timeline">
                     {['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered'].map((status) => {
                       const statuses = ['New', 'Pending', 'Confirmed', 'Processing', 'Packing', 'Shipped', 'Out for Delivery', 'Delivered']

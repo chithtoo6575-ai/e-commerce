@@ -7,6 +7,11 @@ import { getProductStock, getProductVariants } from './lib/productVariants'
 import { t } from './lib/i18n'
 import { assetUrl } from './lib/baseUrl.js'
 
+function isMmqrPayment(payment) {
+  if (!payment) return false
+  return payment.id === 'mmqr' || payment.type === 'mmqr' || payment.name?.toUpperCase()?.includes('MMQR') || Boolean(payment.mmqrImageUrl)
+}
+
 export default function DesktopApp({
   route,
   setRoute,
@@ -279,9 +284,10 @@ export default function DesktopApp({
     const checkoutSteps = ['Shipping information', 'Payment method', 'Payment slip', 'Review order', 'Place order']
     const canContinue = !validateCheckoutStep(checkoutStep)
     const selectedDelivery = DELIVERY_METHODS.find((method) => method.id === checkoutForm.deliveryMethod)
-    const accountNumber = selectedPaymentAccount?.type === 'bank' || selectedPaymentAccount?.id === 'bank'
+    const isSelectedMmqr = isMmqrPayment(selectedPaymentAccount)
+    const accountNumber = !isSelectedMmqr && (selectedPaymentAccount?.type === 'bank' || selectedPaymentAccount?.id === 'bank'
       ? selectedPaymentAccount?.accountNumber
-      : selectedPaymentAccount?.phoneNumber
+      : selectedPaymentAccount?.phoneNumber)
 
     return (
       <main className="checkout-screen">
@@ -315,22 +321,56 @@ export default function DesktopApp({
             {checkoutStep === 2 && (
               <div className="card-block payment-select-block">
                 <h3>{tr('Select a payment method')}</h3>
-                {paymentMethods.length ? <div className="payment-account-options">{paymentMethods.map((payment) => (
-                  <label className={`payment-account-option ${selectedPaymentAccount?.id === payment.id ? 'selected' : ''}`} key={payment.id}>
-                    <input type="radio" name="paymentAccount" value={payment.id} checked={selectedPaymentAccount?.id === payment.id} onChange={() => { setCheckoutForm({ ...checkoutForm, paymentAccountId: payment.id }); setPaymentSlip(''); setError('') }} />
-                    <span className="payment-account-option-copy"><strong>{language === 'my' ? payment.nameMyanmar || payment.name : payment.name}</strong><small>{payment.accountName || tr('Pay on delivery')}{payment.phoneNumber ? ` · ${payment.phoneNumber}` : ''}{payment.bankName ? ` · ${payment.bankName}` : ''}</small></span>
-                    <span className="payment-radio-mark" />
-                  </label>
-                ))}</div> : <div className="admin-empty">{tr('No active payment methods are configured. Please contact the shop owner.')}</div>}
+                {paymentMethods.length ? <div className="payment-account-options">{paymentMethods.map((payment) => {
+                  const isPaymentMmqr = isMmqrPayment(payment)
+                  return (
+                    <label className={`payment-account-option ${selectedPaymentAccount?.id === payment.id ? 'selected' : ''}`} key={payment.id}>
+                      <input type="radio" name="paymentAccount" value={payment.id} checked={selectedPaymentAccount?.id === payment.id} onChange={() => { setCheckoutForm({ ...checkoutForm, paymentAccountId: payment.id }); setPaymentSlip(''); setError('') }} />
+                      <span className="payment-account-option-copy">
+                        <strong>{language === 'my' ? payment.nameMyanmar || payment.name : payment.name}</strong>
+                        <small>
+                          {payment.type === 'cash' || payment.id === 'cod'
+                            ? tr('Pay on delivery')
+                            : isPaymentMmqr
+                              ? tr('Scan QR code to pay')
+                              : [payment.accountName, payment.phoneNumber, payment.bankName].filter(Boolean).join(' · ') || payment.accountName || tr('Direct transfer')}
+                        </small>
+                      </span>
+                      <span className="payment-radio-mark" />
+                    </label>
+                  )
+                })}</div> : <div className="admin-empty">{tr('No active payment methods are configured. Please contact the shop owner.')}</div>}
 
                 {selectedPaymentAccount && <div className="selected-payment-details">
                   <div className="selected-payment-heading"><div><p className="kicker">{tr('PAYMENT DESTINATION')}</p><h4>{language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name}</h4></div><strong>{formatPrice(cartTotal)}</strong></div>
-                  {isCashPayment ? <p>{tr('Pay the delivery person when your order arrives.')}</p> : <>
+                  {isCashPayment ? <p>{tr('Pay the delivery person when your order arrives.')}</p> : isSelectedMmqr ? (
+                    <>
+                      {(selectedPaymentAccount.mmqrImageUrl || selectedPaymentAccount.qrCode) && (
+                        <figure className="payment-qr">
+                          <img src={selectedPaymentAccount.mmqrImageUrl || selectedPaymentAccount.qrCode} alt={`${language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name} ${tr('payment QR code')}`} />
+                          <figcaption>{tr('Scan this QR code to pay')}</figcaption>
+                        </figure>
+                      )}
+                      <div className="slip-upload-row">
+                        <label className="btn-ghost slip-upload-button">
+                          {paymentSlip ? tr('Replace payment slip') : tr('Upload payment slip')}
+                          <input id="checkout-payment-slip" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePaymentSlip} />
+                        </label>
+                        {paymentSlip && <button className="btn-link" onClick={() => setPaymentSlip('')}>{tr('Remove image')}</button>}
+                      </div>
+                      <p className="muted">{tr('JPG, JPEG, PNG, or WebP · up to 5 MB')}</p>
+                      {paymentSlip && (
+                        <figure className="slip-preview">
+                          <img src={paymentSlip} alt={tr('Payment slip preview')} />
+                          <figcaption>{tr('Payment slip preview')}</figcaption>
+                        </figure>
+                      )}
+                    </>
+                  ) : <>
                     {selectedPaymentAccount.accountName && <p><span>{tr('Account name')}</span><strong>{selectedPaymentAccount.accountName}</strong></p>}
-                    {selectedPaymentAccount.type === 'bank' || selectedPaymentAccount.id === 'bank' ? <>
-                      {selectedPaymentAccount.bankName && <p><span>{tr('Bank')}</span><strong>{selectedPaymentAccount.bankName}</strong></p>}
-                      {selectedPaymentAccount.accountNumber && <p><span>{tr('Account number')}</span><strong className="account-number">{selectedPaymentAccount.accountNumber}</strong></p>}
-                    </> : selectedPaymentAccount.phoneNumber && <p><span>{tr('Phone number')}</span><strong className="account-number">{selectedPaymentAccount.phoneNumber}</strong></p>}
+                    {selectedPaymentAccount.bankName && <p><span>{tr('Bank')}</span><strong>{selectedPaymentAccount.bankName}</strong></p>}
+                    {selectedPaymentAccount.accountNumber && <p><span>{tr('Account number')}</span><strong className="account-number">{selectedPaymentAccount.accountNumber}</strong></p>}
+                    {selectedPaymentAccount.phoneNumber && <p><span>{tr('Phone number')}</span><strong className="account-number">{selectedPaymentAccount.phoneNumber}</strong></p>}
                     {selectedPaymentAccount.qrCode && <figure className="payment-qr"><img src={selectedPaymentAccount.qrCode} alt={`${language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name} ${tr('payment QR code')}`} /><figcaption>{tr('Scan this QR code to pay')}</figcaption></figure>}
                     <p className="payment-instruction">{tr('Please transfer the exact order amount to the selected account, then upload your payment slip.')}</p>
                   </>}
@@ -353,7 +393,15 @@ export default function DesktopApp({
               <div className="card-block checkout-review">
                 <h3>{tr('Review your order')}</h3>
                 <section><h4>{tr('Customer information')}</h4><p><span>{tr('Name')}</span><strong>{checkoutForm.name}</strong></p><p><span>{tr('Phone')}</span><strong>{checkoutForm.phone}</strong></p><p><span>{tr('Delivery address')}</span><strong>{checkoutForm.shippingAddress}</strong></p><p><span>{tr('Delivery method')}</span><strong>{tr(selectedDelivery?.label || '')}</strong></p></section>
-                <section><h4>{tr('Payment')}</h4><p><span>{tr('Payment method')}</span><strong>{selectedPaymentAccount ? language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name : tr('Not selected')}</strong></p>{selectedPaymentAccount?.accountName && <p><span>{tr('Account name')}</span><strong>{selectedPaymentAccount.accountName}</strong></p>}{accountNumber && <p><span>{tr('Account number / phone')}</span><strong className="account-number">{accountNumber}</strong></p>}<p><span>{tr('Payment amount')}</span><strong>{formatPrice(cartTotal)}</strong></p>{paymentSlip && <figure className="slip-preview review-slip"><img src={paymentSlip} alt={tr('Uploaded payment slip')} /><figcaption>{tr('Uploaded payment slip')}</figcaption></figure>}{isCashPayment && <p className="muted">{tr('Cash on Delivery · no slip required')}</p>}</section>
+                <section>
+                  <h4>{tr('Payment')}</h4>
+                  <p><span>{tr('Payment method')}</span><strong>{selectedPaymentAccount ? language === 'my' ? selectedPaymentAccount.nameMyanmar || selectedPaymentAccount.name : selectedPaymentAccount.name : tr('Not selected')}</strong></p>
+                  {!isSelectedMmqr && selectedPaymentAccount?.accountName && <p><span>{tr('Account name')}</span><strong>{selectedPaymentAccount.accountName}</strong></p>}
+                  {!isSelectedMmqr && accountNumber && <p><span>{tr('Account number / phone')}</span><strong className="account-number">{accountNumber}</strong></p>}
+                  <p><span>{tr('Payment amount')}</span><strong>{formatPrice(cartTotal)}</strong></p>
+                  {paymentSlip && <figure className="slip-preview review-slip"><img src={paymentSlip} alt={tr('Uploaded payment slip')} /><figcaption>{tr('Uploaded payment slip')}</figcaption></figure>}
+                  {isCashPayment && <p className="muted">{tr('Cash on Delivery · no slip required')}</p>}
+                </section>
                 <section><h4>{tr('Items')} ({cart.filter((item) => item.selected !== false).length})</h4>{cart.filter((item) => item.selected !== false).map((item) => {
                   const product = products.find((candidate) => String(candidate.id) === String(item.id))
                   const price = Number(product?.discountPrice ?? product?.price ?? item.price)
@@ -721,7 +769,7 @@ export default function DesktopApp({
           </article>
 
           <article className="card-block customer-orders-panel">
-            <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={setSelectedOrder} formatPrice={formatPrice} onBuyAgain={buyOrderAgain} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} />
+            <CustomerOrders orders={orders} selectedOrder={selectedOrder} setSelectedOrder={setSelectedOrder} formatPrice={formatPrice} onBuyAgain={buyOrderAgain} onCancelOrder={cancelCustomerOrder} getTrackingUrl={getDeliveryTrackingUrl} loading={ordersLoading} error={ordersError} tr={tr} />
           </article>
 
           <article className="card-block">

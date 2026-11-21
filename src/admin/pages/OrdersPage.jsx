@@ -116,7 +116,6 @@ export default function OrdersPage({
   showToast
 }) {
   const canViewOrderDetails = isOwner || permissions.includes('orders.details')
-  const canManageShipping = isOwner || permissions.includes('shipping.manage')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusTab, setStatusTab] = useState('All')
   const [paymentFilter, setPaymentFilter] = useState('All')

@@ -89,7 +89,67 @@
 }
 .customer-order-list {
   display: grid;
-  gap: 18px;
+  gap: 14px;
+}
+/* Compact My Orders card: thumbnail, summary, one primary action row */
+.customer-order-card--compact {
+  box-shadow: 0 2px 10px #252b2905;
+}
+.customer-order-card--compact header {
+  padding: 14px 16px;
+}
+.customer-order-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.customer-order-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--co-gray);
+  border: 1px solid #e9e8dd;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 12px;
+  color: #88702f;
+}
+.customer-order-thumbs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px 0;
+}
+.customer-order-thumbs .customer-order-thumb {
+  width: 52px;
+  height: 52px;
+}
+.customer-order-thumb-more {
+  color: #626b66;
+  font-size: 12px;
+  border-color: #e0e5e2;
+  border-style: dashed;
+  background: white;
+}
+.customer-order-summary {
+  display: block;
+}
+.customer-order-details-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.customer-order-details-topbar .customer-orders-back {
+  padding: 8px 0;
+}
+.customer-order-details .customer-orders-heading {
+  margin-bottom: 16px;
 }
 .customer-order-card {
   border: 1px solid #e0e5e2;
@@ -201,6 +261,14 @@
   color: var(--co-ink);
   margin-left: 8px;
   font-size: 16px;
+}
+.customer-order-card--compact footer > span strong {
+  font-size: 15px;
+}
+.customer-orders .customer-btn.text {
+  border-color: transparent;
+  background: transparent;
+  color: #6c571b;
 }
 .customer-order-card footer > div,
 .customer-order-actions {
@@ -410,6 +478,20 @@
   .customer-product-row b {
     grid-column: 2;
     margin-top: -10px;
+  }
+  .customer-order-card--compact header {
+    padding: 12px 14px;
+  }
+  .customer-order-card--compact footer {
+    padding: 12px 14px;
+  }
+  .customer-order-thumbs {
+    padding: 10px 14px 0;
+  }
+  .customer-order-thumbs .customer-order-thumb,
+  .customer-order-thumb-more {
+    width: 44px;
+    height: 44px;
   }
   .customer-order-card footer > div {
     display: grid;

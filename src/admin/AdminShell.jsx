@@ -45,16 +45,24 @@ import { adminT, AdminLanguageSelector } from './adminI18n'
 import { getAdminPath, getAdminUrl } from './adminRouter'
 
 function mapPaymentAccounts(payments) {
-  return Object.values(payments).map((payment, index) => ({
-    ...payment,
-    icon: payment.type === 'cash' ? '💵' : payment.type === 'bank' ? '🏦' : '📱',
-    description: payment.type === 'cash' ? 'Pay on delivery' : payment.type === 'bank' ? payment.bankName || 'Bank transfer' : 'Mobile wallet',
-    instructions: payment.type === 'cash'
-      ? 'Cash payment on delivery'
-      : [payment.accountName, payment.bankName, payment.accountNumber || payment.phoneNumber].filter(Boolean).join(' · '),
-    status: payment.enabled === true ? 'Active' : 'Inactive',
-    sortOrder: Number.isInteger(payment.sortOrder) ? payment.sortOrder : index + 1
-  })).sort((a, b) => a.sortOrder - b.sortOrder)
+  return Object.values(payments).map((payment, index) => {
+    const isMmqr = payment.id === 'mmqr' || payment.type === 'mmqr' || (payment.name && payment.name.toUpperCase().includes('MMQR')) || Boolean(payment.mmqrImageUrl)
+    const img = payment.mmqrImageUrl || payment.qrCode || ''
+    return {
+      ...payment,
+      mmqrImageUrl: img,
+      qrCode: img,
+      icon: payment.type === 'cash' ? '💵' : payment.type === 'bank' ? '🏦' : isMmqr ? '🔳' : '📱',
+      description: payment.type === 'cash' ? 'Pay on delivery' : payment.type === 'bank' ? payment.bankName || 'Bank transfer' : isMmqr ? 'MMQR QR payment' : 'Mobile wallet',
+      instructions: payment.type === 'cash'
+        ? 'Cash payment on delivery'
+        : isMmqr
+          ? (img ? 'MMQR QR code ready' : 'MMQR image not uploaded')
+          : [payment.accountName, payment.bankName, payment.accountNumber || payment.phoneNumber].filter(Boolean).join(' · '),
+      status: payment.enabled === true ? 'Active' : 'Inactive',
+      sortOrder: Number.isInteger(payment.sortOrder) ? payment.sortOrder : index + 1
+    }
+  }).sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
 export default function AdminShell({

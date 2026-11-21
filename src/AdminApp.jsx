@@ -78,7 +78,7 @@ export default function AdminApp() {
     }
     if (!response.ok) throw new Error(result.error || adminT('Unable to load the Admin dashboard.'))
     setData(result)
-  }, [handleExpiredSession, language])
+  }, [handleExpiredSession])
 
   useEffect(() => {
     if (!auth) return undefined

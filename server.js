@@ -3126,19 +3126,32 @@ const server = http.createServer(async (request, response) => {
       if (request.method === 'POST' && url.pathname === '/api/admin/payments') {
         const body = await readBody(request)
         const name = String(body.name || '').trim()
-        const type = body.type === 'bank' ? 'bank' : 'wallet'
+        const isMmqr = body.type === 'mmqr' || body.id === 'mmqr' || name.toUpperCase().includes('MMQR') || Boolean(body.mmqrImageUrl)
+        const type = body.type === 'bank' ? 'bank' : isMmqr ? 'mmqr' : (body.type === 'cash' ? 'cash' : 'wallet')
         const accountName = String(body.accountName || '').trim()
         const phoneNumber = String(body.phoneNumber || '').trim()
         const bankName = String(body.bankName || '').trim()
         const accountNumber = String(body.accountNumber || '').trim()
-        const qrCode = body.qrCode ? normalizeChatImage(body.qrCode) : ''
-        if (!name || name.length > 60 || !accountName || (type === 'bank' ? !bankName || !accountNumber : !phoneNumber) || (body.qrCode && !qrCode)) {
+        let mmqrImageUrl = body.mmqrImageUrl ? String(body.mmqrImageUrl).trim() : ''
+        if (mmqrImageUrl && mmqrImageUrl.startsWith('data:image/')) {
+          const normalized = normalizeChatImage(mmqrImageUrl)
+          if (!normalized) return send(response, 400, { error: 'MMQR image must be a JPG, PNG, or WebP image no larger than 5 MB.' })
+          mmqrImageUrl = normalized
+        }
+        let qrCode = body.qrCode ? (String(body.qrCode).startsWith('data:image/') ? normalizeChatImage(body.qrCode) : String(body.qrCode).trim()) : mmqrImageUrl
+        if (body.qrCode && String(body.qrCode).startsWith('data:image/') && !qrCode) {
+          return send(response, 400, { error: 'QR code must be a JPG, PNG, or WebP image no larger than 5 MB.' })
+        }
+        if (!mmqrImageUrl && qrCode) mmqrImageUrl = qrCode
+        if (!qrCode && mmqrImageUrl) qrCode = mmqrImageUrl
+
+        if (!name || name.length > 60 || (!isMmqr && !accountName) || (type === 'bank' ? !bankName || !accountNumber : (!isMmqr && !phoneNumber))) {
           return send(response, 400, { error: 'Enter a payment name, account holder, valid account details, and a supported QR image.' })
         }
         const payments = readPayments()
-        const id = `custom-${crypto.randomUUID()}`
+        const id = isMmqr && !payments['mmqr'] ? 'mmqr' : `custom-${crypto.randomUUID()}`
         const isEnabled = body.status ? body.status === 'Active' : body.enabled !== false
-        const payment = { id, name, type, accountName, phoneNumber, bankName, accountNumber, qrCode, enabled: isEnabled }
+        const payment = { id, name, type, accountName, phoneNumber, bankName, accountNumber, qrCode, mmqrImageUrl, enabled: isEnabled }
         payments[id] = payment
         writePayments(payments)
         const data = readData(); auditAdminAction(data, request, `Added payment account: ${name}.`); writeData(data)
@@ -3149,27 +3162,43 @@ const server = http.createServer(async (request, response) => {
         const body = await readBody(request)
         const payments = readPayments()
         if (!payments[methodId]) return send(response, 404, { error: 'Payment method not found.' })
+        const isMmqr = methodId === 'mmqr' || body.type === 'mmqr' || payments[methodId].type === 'mmqr' || (body.name && String(body.name).toUpperCase().includes('MMQR')) || (payments[methodId].name && payments[methodId].name.toUpperCase().includes('MMQR')) || Boolean(body.mmqrImageUrl) || Boolean(payments[methodId].mmqrImageUrl)
         const updated = {
           ...payments[methodId],
           ...body,
           id: payments[methodId].id,
           name: body.name ? String(body.name).trim() : payments[methodId].name,
           nameMyanmar: payments[methodId].nameMyanmar || payments[methodId].name,
-          type: body.type ? (body.type === 'bank' ? 'bank' : body.type === 'cash' ? 'cash' : 'wallet') : (payments[methodId].type || (methodId === 'bank' ? 'bank' : methodId === 'cod' ? 'cash' : 'wallet'))
+          type: body.type ? (body.type === 'bank' ? 'bank' : body.type === 'cash' ? 'cash' : (body.type === 'mmqr' || isMmqr) ? 'mmqr' : 'wallet') : (payments[methodId].type || (methodId === 'bank' ? 'bank' : methodId === 'cod' ? 'cash' : isMmqr ? 'mmqr' : 'wallet'))
         }
         if (body.status === 'Active') updated.enabled = true
         if (body.status === 'Inactive') updated.enabled = false
-        if (methodId !== 'bank' && methodId !== 'cod' && updated.type !== 'bank' && typeof updated.accountName !== 'string') throw new Error('Account name is required.')
-        if (methodId !== 'bank' && methodId !== 'cod' && updated.type !== 'bank' && typeof updated.phoneNumber !== 'string') throw new Error('Phone number is required.')
+        if (!isMmqr && methodId !== 'bank' && methodId !== 'cod' && updated.type !== 'bank' && typeof updated.accountName !== 'string') throw new Error('Account name is required.')
+        if (!isMmqr && methodId !== 'bank' && methodId !== 'cod' && updated.type !== 'bank' && typeof updated.phoneNumber !== 'string') throw new Error('Phone number is required.')
         if (methodId === 'bank' || updated.type === 'bank') {
           if (typeof updated.accountName !== 'string') throw new Error('Account name is required.')
           if (typeof updated.bankName !== 'string') throw new Error('Bank name is required.')
           if (typeof updated.accountNumber !== 'string') throw new Error('Account number is required.')
         }
+        if (Object.hasOwn(body, 'mmqrImageUrl')) {
+          let url = body.mmqrImageUrl ? String(body.mmqrImageUrl).trim() : ''
+          if (url && url.startsWith('data:image/')) {
+            const normalized = normalizeChatImage(url)
+            if (!normalized) return send(response, 400, { error: 'MMQR image must be a JPG, PNG, or WebP image no larger than 5 MB.' })
+            url = normalized
+          }
+          updated.mmqrImageUrl = url
+          if (!updated.qrCode || Object.hasOwn(body, 'mmqrImageUrl')) updated.qrCode = url
+        }
         if (Object.hasOwn(body, 'qrCode')) {
-          const qrCode = body.qrCode ? normalizeChatImage(body.qrCode) : ''
-          if (body.qrCode && !qrCode) return send(response, 400, { error: 'QR code must be a JPG, PNG, or WebP image no larger than 5 MB.' })
+          let qrCode = body.qrCode ? String(body.qrCode).trim() : ''
+          if (qrCode && qrCode.startsWith('data:image/')) {
+            const normalized = normalizeChatImage(qrCode)
+            if (!normalized) return send(response, 400, { error: 'QR code must be a JPG, PNG, or WebP image no larger than 5 MB.' })
+            qrCode = normalized
+          }
           updated.qrCode = qrCode
+          if (!updated.mmqrImageUrl) updated.mmqrImageUrl = qrCode
         }
         if (typeof updated.enabled !== 'boolean') throw new Error('Enabled status is required.')
         payments[methodId] = updated
@@ -3804,11 +3833,33 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/payments') {
       const payments = readPayments()
       const enabled = Object.values(payments)
-        .filter((payment) => payment.enabled && (payment.id === 'cod' || (payment.accountName && (payment.type === 'bank' || payment.id === 'bank' ? payment.bankName && payment.accountNumber : payment.phoneNumber))))
+        .filter((payment) => payment.enabled && (
+          payment.id === 'cod' ||
+          payment.type === 'cash' ||
+          payment.id === 'mmqr' ||
+          payment.type === 'mmqr' ||
+          (payment.name && payment.name.toUpperCase().includes('MMQR')) ||
+          Boolean(payment.mmqrImageUrl) ||
+          (payment.accountName && (payment.type === 'bank' || payment.id === 'bank' ? payment.bankName && payment.accountNumber : payment.phoneNumber))
+        ))
         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
         .map((payment) => {
-          const type = payment.type || (payment.id === 'bank' ? 'bank' : payment.id === 'cod' ? 'cash' : 'wallet')
-          return { id: payment.id, name: payment.name, nameMyanmar: payment.nameMyanmar, type, kind: type === 'bank' ? 'bank' : type === 'cash' ? 'cod' : 'wallet', accountName: payment.accountName || '', phoneNumber: payment.phoneNumber || '', bankName: payment.bankName || '', accountNumber: payment.accountNumber || '', qrCode: payment.qrCode || '' }
+          const isMmqr = payment.id === 'mmqr' || payment.type === 'mmqr' || (payment.name && payment.name.toUpperCase().includes('MMQR')) || Boolean(payment.mmqrImageUrl)
+          const type = payment.type || (payment.id === 'bank' ? 'bank' : payment.id === 'cod' ? 'cash' : isMmqr ? 'mmqr' : 'wallet')
+          const img = payment.mmqrImageUrl || payment.qrCode || ''
+          return {
+            id: payment.id,
+            name: payment.name,
+            nameMyanmar: payment.nameMyanmar,
+            type,
+            kind: type === 'bank' ? 'bank' : type === 'cash' ? 'cod' : isMmqr ? 'mmqr' : 'wallet',
+            accountName: payment.accountName || '',
+            phoneNumber: payment.phoneNumber || '',
+            bankName: payment.bankName || '',
+            accountNumber: payment.accountNumber || '',
+            qrCode: img,
+            mmqrImageUrl: img
+          }
         })
       return send(response, 200, { payments: enabled })
     }
@@ -3961,9 +4012,11 @@ const server = http.createServer(async (request, response) => {
       if (!Number.isFinite(total) || total <= 0) return send(response, 400, { error: 'The order total must be greater than zero.' })
 
       const paymentAccountId = String(requestedOrder.paymentAccountId || requestedOrder.paymentMethodId || '')
-      const paymentAccount = readPayments()[paymentAccountId]
+      const paymentsMap = readPayments()
+      const paymentAccount = paymentsMap[paymentAccountId] || (paymentAccountId === 'mmqr' ? Object.values(paymentsMap).find((p) => p.id === 'mmqr' || p.type === 'mmqr' || (p.name && p.name.toUpperCase().includes('MMQR')) || Boolean(p.mmqrImageUrl)) : null)
       const isCashPayment = paymentAccountId === 'cod' || paymentAccount?.type === 'cash'
-      if (!paymentAccount || paymentAccount.enabled !== true || (paymentAccountId !== 'cod' && (!paymentAccount.accountName || (paymentAccount.type === 'bank' || paymentAccountId === 'bank' ? !paymentAccount.bankName || !paymentAccount.accountNumber : !paymentAccount.phoneNumber)))) return send(response, 400, { error: 'That payment account is not active or fully configured. Refresh checkout and choose another account.' })
+      const isMmqrPayment = paymentAccountId === 'mmqr' || paymentAccount?.type === 'mmqr' || (paymentAccount?.name && paymentAccount.name.toUpperCase().includes('MMQR')) || Boolean(paymentAccount?.mmqrImageUrl) || Boolean(paymentAccount?.qrCode)
+      if (!paymentAccount || paymentAccount.enabled !== true || (!isCashPayment && !isMmqrPayment && (!paymentAccount.accountName || (paymentAccount.type === 'bank' || paymentAccountId === 'bank' ? !paymentAccount.bankName || !paymentAccount.accountNumber : !paymentAccount.phoneNumber)))) return send(response, 400, { error: 'That payment account is not active or fully configured. Refresh checkout and choose another account.' })
       const slipData = requestedOrder.receipt?.dataUrl
       const receiptDataUrl = slipData ? normalizeChatImage(slipData) : null
       if (slipData && !receiptDataUrl) return send(response, 400, { error: 'Payment slip must be a JPG, PNG, or WebP image no larger than 5 MB.' })
